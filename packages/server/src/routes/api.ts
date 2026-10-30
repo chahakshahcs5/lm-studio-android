@@ -6,6 +6,7 @@ import path from 'path';
 import { hardwareMonitor } from '../hardware/telemetry.js';
 import { llamaEngine } from '../engine/llama.js';
 import { modelManager, CURATED_MODELS } from '../hf/models.js';
+import { searchHfHub, getHfModelFiles, getHfModelDetails } from '../hf/hub.js';
 import { getLocalIp } from '../utils/network.js';
 import { fileDb } from '../db/fileDb.js';
 
@@ -129,8 +130,82 @@ apiRouter.post('/api/download', (req: Request, res: Response) => {
   }
 });
 
+apiRouter.post('/api/download/cancel', (req: Request, res: Response) => {
+  const cancelled = modelManager.cancelDownload();
+  res.json({ success: cancelled, state: modelManager.getDownloadState() });
+});
+
 apiRouter.get('/api/download_status', (req: Request, res: Response) => {
   res.json(modelManager.getDownloadState());
+});
+
+// Delete Local Model from Storage
+apiRouter.delete('/api/models/:filename', (req: Request, res: Response) => {
+  try {
+    const filename = req.params.filename;
+    const currentModel = llamaEngine.getStatus().currentModel;
+    if (llamaEngine.getStatus().loaded && currentModel) {
+      if (
+        currentModel.id === filename ||
+        currentModel.name === filename ||
+        currentModel.path.includes(filename)
+      ) {
+        return res
+          .status(400)
+          .json({ error: 'Cannot delete actively mounted model. Please unload it first.' });
+      }
+    }
+    const success = modelManager.deleteLocalModel(filename);
+    if (!success) {
+      return res.status(404).json({ error: `Model "${filename}" not found in local storage.` });
+    }
+    res.json({ success: true, message: `Model "${filename}" removed from device storage.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to delete model file' });
+  }
+});
+
+// Hugging Face Hub Search & Discovery
+apiRouter.get('/api/hf/search', async (req: Request, res: Response) => {
+  try {
+    const query = typeof req.query.q === 'string' ? req.query.q : '';
+    const sort = typeof req.query.sort === 'string' ? (req.query.sort as any) : 'downloads';
+    const category = typeof req.query.category === 'string' ? (req.query.category as any) : 'all';
+    const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 30;
+
+    const models = await searchHfHub({ query, sort, category, limit });
+    res.json({ success: true, data: models });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to search Hugging Face Hub' });
+  }
+});
+
+// Hugging Face Model Files (GGUF list)
+apiRouter.get('/api/hf/files', async (req: Request, res: Response) => {
+  try {
+    const repo = typeof req.query.repo === 'string' ? req.query.repo : '';
+    if (!repo) {
+      return res.status(400).json({ error: 'Missing required "repo" query parameter (e.g. author/repo-name)' });
+    }
+    const files = await getHfModelFiles(repo);
+    res.json({ success: true, data: files });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to list repository files' });
+  }
+});
+
+// Hugging Face Model Card & Details
+apiRouter.get('/api/hf/model', async (req: Request, res: Response) => {
+  try {
+    const repo = typeof req.query.repo === 'string' ? req.query.repo : '';
+    if (!repo) {
+      return res.status(400).json({ error: 'Missing required "repo" query parameter' });
+    }
+    const details = await getHfModelDetails(repo);
+    res.json({ success: true, data: details });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to get model details' });
+  }
 });
 
 // OpenAI Compatible Models Endpoint

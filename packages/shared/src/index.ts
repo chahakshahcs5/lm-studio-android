@@ -69,6 +69,42 @@ export interface HfModelPreset {
   description: string;
 }
 
+export interface HfModelFile {
+  path: string;
+  filename: string;
+  sizeBytes: number;
+  sizeFormatted: string;
+  quantization: string;
+  quantGroup: 'fast' | 'balanced' | 'quality' | 'extreme' | 'full';
+  minRamGb: number;
+  downloadUrl: string;
+  isDownloaded?: boolean;
+}
+
+export interface HfHubModel {
+  id: string; // e.g. "bartowski/Llama-3.2-3B-Instruct-GGUF"
+  author: string;
+  name: string;
+  downloads: number;
+  likes: number;
+  lastModified: string;
+  pipelineTag?: string;
+  tags: string[];
+  description?: string;
+  baseModel?: string;
+  gated?: boolean | string;
+  estimatedParams?: string;
+  minRamGb?: number;
+  files?: HfModelFile[];
+}
+
+export interface HfSearchOptions {
+  query?: string;
+  sort?: 'downloads' | 'likes' | 'lastModified' | 'trendingScore';
+  category?: 'all' | 'chat' | 'code' | 'reasoning' | 'vision' | 'lightweight';
+  limit?: number;
+}
+
 export interface DownloadState {
   active: boolean;
   modelId: string;

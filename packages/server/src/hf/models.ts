@@ -145,6 +145,13 @@ export class ModelManager {
   private cachedLocalModels: LocalModel[] = [];
   private lastScanTimestamp: number = 0;
 
+  // Active download tracking for cancellation
+  private activeRequest: http.ClientRequest | null = null;
+  private activeResponse: http.IncomingMessage | null = null;
+  private activeFileStream: fs.WriteStream | null = null;
+  private activeDestPath: string | null = null;
+  private isCancelled: boolean = false;
+
   constructor() {
     this.modelsDir = process.env.MODELS_DIR || path.join(os.homedir(), 'models');
     if (!fs.existsSync(this.modelsDir)) {
@@ -166,6 +173,77 @@ export class ModelManager {
 
   public getDownloadState(): DownloadState {
     return { ...this.downloadState };
+  }
+
+  public cancelDownload(): boolean {
+    if (!this.downloadState.active) {
+      return false;
+    }
+    this.isCancelled = true;
+    if (this.activeRequest) {
+      try {
+        this.activeRequest.destroy();
+      } catch {
+        // ignore
+      }
+      this.activeRequest = null;
+    }
+    if (this.activeResponse) {
+      try {
+        this.activeResponse.destroy();
+      } catch {
+        // ignore
+      }
+      this.activeResponse = null;
+    }
+    if (this.activeFileStream) {
+      try {
+        this.activeFileStream.close();
+      } catch {
+        // ignore
+      }
+      this.activeFileStream = null;
+    }
+    if (this.activeDestPath && fs.existsSync(this.activeDestPath)) {
+      try {
+        fs.unlinkSync(this.activeDestPath);
+      } catch {
+        // ignore
+      }
+      this.activeDestPath = null;
+    }
+
+    this.downloadState.active = false;
+    this.downloadState.error = 'Download cancelled by user';
+    this.notifyProgress();
+    return true;
+  }
+
+  public deleteLocalModel(filenameOrPath: string): boolean {
+    const filename = path.basename(filenameOrPath);
+    if (!filename.toLowerCase().endsWith('.gguf')) {
+      throw new Error('Only .gguf model files can be removed from storage.');
+    }
+
+    // Check in modelsDir
+    const dest = path.join(this.modelsDir, filename);
+    if (fs.existsSync(dest)) {
+      fs.unlinkSync(dest);
+      this.lastScanTimestamp = 0;
+      return true;
+    }
+
+    // Check if absolute path was provided and exists
+    if (fs.existsSync(filenameOrPath)) {
+      const stat = fs.statSync(filenameOrPath);
+      if (stat.isFile()) {
+        fs.unlinkSync(filenameOrPath);
+        this.lastScanTimestamp = 0;
+        return true;
+      }
+    }
+
+    return false;
   }
 
   public scanLocalModels(force: boolean = false): LocalModel[] {
@@ -277,6 +355,9 @@ export class ModelManager {
       throw new Error('Restricted target: Cannot download from internal or loopback addresses.');
     }
 
+    this.isCancelled = false;
+    this.activeDestPath = dest;
+
     this.downloadState = {
       active: true,
       modelId: id || safeFilename,
@@ -295,26 +376,40 @@ export class ModelManager {
       .then(() => {
         this.downloadState.active = false;
         this.downloadState.percent = 100;
+        this.activeRequest = null;
+        this.activeResponse = null;
+        this.activeFileStream = null;
+        this.activeDestPath = null;
         this.lastScanTimestamp = 0; // Invalidate cache so new model appears immediately
         this.notifyProgress();
       })
       .catch((err) => {
+        this.activeRequest = null;
+        this.activeResponse = null;
+        this.activeFileStream = null;
         this.downloadState.active = false;
-        this.downloadState.error = err.message || 'Download failed';
+        if (!this.isCancelled) {
+          this.downloadState.error = err.message || 'Download failed';
+        }
         this.notifyProgress();
-        if (fs.existsSync(dest)) {
+        if (this.activeDestPath && fs.existsSync(this.activeDestPath)) {
           try {
-            fs.unlinkSync(dest);
+            fs.unlinkSync(this.activeDestPath);
           } catch {
             // ignore
           }
         }
+        this.activeDestPath = null;
       });
 
     return this.getDownloadState();
   }
 
   private downloadFile(url: string, destPath: string, redirectCount: number = 0): Promise<void> {
+    if (this.isCancelled) {
+      return Promise.reject(new Error('Download cancelled by user.'));
+    }
+
     if (redirectCount > 5) {
       return Promise.reject(new Error('Too many HTTP redirects (exceeded limit of 5).'));
     }
@@ -331,9 +426,16 @@ export class ModelManager {
           },
         },
         (res) => {
+          if (this.isCancelled) {
+            res.destroy();
+            return reject(new Error('Download cancelled by user.'));
+          }
+
+          this.activeResponse = res;
+
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            // Handle redirect with incremented count
-            return this.downloadFile(res.headers.location, destPath, redirectCount + 1).then(resolve).catch(reject);
+            const redirectUrl = new URL(res.headers.location, url).toString();
+            return this.downloadFile(redirectUrl, destPath, redirectCount + 1).then(resolve).catch(reject);
           }
 
           if (res.statusCode !== 200) {
@@ -345,12 +447,19 @@ export class ModelManager {
           this.downloadState.totalBytes = totalBytes;
 
           const fileStream = fs.createWriteStream(destPath);
+          this.activeFileStream = fileStream;
           let downloaded = 0;
           let startTime = Date.now();
           let lastCheckTime = startTime;
           let lastDownloaded = 0;
 
           res.on('data', (chunk: Buffer) => {
+            if (this.isCancelled) {
+              res.destroy();
+              fileStream.close();
+              return;
+            }
+
             downloaded += chunk.length;
             this.downloadState.downloadedBytes = downloaded;
 
@@ -378,17 +487,24 @@ export class ModelManager {
 
           fileStream.on('finish', () => {
             fileStream.close();
+            this.activeFileStream = null;
+            this.activeResponse = null;
             resolve();
           });
 
           fileStream.on('error', (err) => {
+            this.activeFileStream = null;
             reject(err);
           });
         }
       );
 
+      this.activeRequest = request;
+
       request.on('error', (err) => {
-        reject(err);
+        if (!this.isCancelled) {
+          reject(err);
+        }
       });
     });
   }
