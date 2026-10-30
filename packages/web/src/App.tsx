@@ -58,9 +58,18 @@ export function App() {
       const res = await fetch('/api/unload', { method: 'POST' });
       if (res.ok) {
         refreshStatus();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showError({
+          title: 'Unload Model Failed',
+          message: data.error || 'Server failed to unload model from memory.',
+        });
       }
-    } catch {
-      // ignore
+    } catch (err: any) {
+      showError({
+        title: 'Communication Error',
+        message: err.message || 'Failed to communicate with server to unload model.',
+      });
     } finally {
       setIsLoading(false);
     }
@@ -87,18 +96,18 @@ export function App() {
 
       {/* Main Studio Viewport */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Active Tab Screen */}
+        {/* Active Tab Screen (persisted in DOM to preserve chat & UI state) */}
         <main className="flex-1 flex flex-col overflow-hidden relative">
-          {activeTab === 'chat' && (
+          <div className={`flex-1 flex flex-col overflow-hidden relative ${activeTab === 'chat' ? '' : 'hidden'}`}>
             <ChatPlayground
               engineStatus={engineStatus}
               onTpsUpdate={handleTpsUpdate}
               onNavigateToModels={() => setActiveTab('models')}
               onError={showError}
             />
-          )}
+          </div>
 
-          {activeTab === 'models' && (
+          <div className={`flex-1 flex flex-col overflow-hidden relative ${activeTab === 'models' ? '' : 'hidden'}`}>
             <ModelExplorer
               engineStatus={engineStatus}
               telemetry={telemetry}
@@ -106,11 +115,11 @@ export function App() {
               onRefreshStatus={refreshStatus}
               onError={showError}
             />
-          )}
+          </div>
 
-          {activeTab === 'api' && (
+          <div className={`flex-1 flex flex-col overflow-hidden relative ${activeTab === 'api' ? '' : 'hidden'}`}>
             <ApiPlayground engineStatus={engineStatus} serverIp={serverIp} />
-          )}
+          </div>
         </main>
 
         {/* Real-time Hardware Telemetry Rail (Persistent on Desktop >= lg) */}

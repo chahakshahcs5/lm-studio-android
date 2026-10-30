@@ -14,6 +14,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import {
   ChatMessage,
   EngineStatus,
@@ -100,6 +101,13 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
     }
   }, [messages]);
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
+    }
+  }, [input]);
+
   const handleCopy = async (text: string, id: string) => {
     const ok = await copyToClipboard(text);
     if (ok) {
@@ -129,13 +137,13 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
     }
 
     const userMsg: ChatMessage = {
-      id: `usr-${Date.now()}`,
+      id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       role: 'user',
       content: text,
       timestamp: Date.now(),
     };
 
-    const assistantMsgId = `asst-${Date.now()}`;
+    const assistantMsgId = `asst-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const initialAssistantMsg: ChatMessage = {
       id: assistantMsgId,
       role: 'assistant',
@@ -155,6 +163,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
     let firstTokenTime: number | null = null;
     let tokenCount = 0;
     let accumulatedContent = '';
+    let lastUiFlush = Date.now();
 
     try {
       const apiMessages = [
@@ -189,8 +198,9 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
       if (!reader) throw new Error('Response stream unavailable');
 
       let buffer = '';
+      let streamDone = false;
 
-      while (true) {
+      while (!streamDone) {
         const { value, done } = await reader.read();
         if (done) break;
 
@@ -201,7 +211,10 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed || !trimmed.startsWith('data: ')) continue;
-          if (trimmed === 'data: [DONE]') break;
+          if (trimmed === 'data: [DONE]') {
+            streamDone = true;
+            break;
+          }
 
           try {
             const parsed = JSON.parse(trimmed.slice(6));
@@ -213,21 +226,32 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
               tokenCount++;
               accumulatedContent += delta;
 
-              const elapsedSec = (Date.now() - (firstTokenTime || startTime)) / 1000;
-              const liveTps = elapsedSec > 0 ? tokenCount / elapsedSec : 0;
-              if (onTpsUpdate) onTpsUpdate(liveTps);
+              const now = Date.now();
+              if (now - lastUiFlush >= 60) {
+                lastUiFlush = now;
+                const elapsedSec = (now - (firstTokenTime || startTime)) / 1000;
+                const liveTps = elapsedSec > 0 ? tokenCount / elapsedSec : 0;
+                if (onTpsUpdate) onTpsUpdate(liveTps);
 
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: accumulatedContent } : m
-                )
-              );
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMsgId ? { ...m, content: accumulatedContent } : m
+                  )
+                );
+              }
             }
           } catch {
             // ignore partial json
           }
         }
       }
+
+      // Ensure final state flush after stream terminates
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantMsgId ? { ...m, content: accumulatedContent } : m
+        )
+      );
 
       // Finish metrics
       const totalDurationMs = Date.now() - startTime;
@@ -288,7 +312,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -435,7 +459,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
                           <div
                             className="prose-studio"
                             dangerouslySetInnerHTML={{
-                              __html: marked.parse(msg.content || '') as string,
+                              __html: DOMPurify.sanitize(marked.parse(msg.content || '', { async: false }) as string),
                             }}
                           />
                           {isStreaming && msg.id === messages[messages.length - 1].id && (
@@ -529,7 +553,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
             </div>
 
             <div className="flex items-center justify-between mt-2 px-1 text-[11px] text-studio-textMuted font-mono">
-              <span>Press Ctrl + Enter to send</span>
+              <span>Press Enter to send (Shift + Enter for new line)</span>
               <span>Offloaded to Smartphone Unified RAM</span>
             </div>
           </div>

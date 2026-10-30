@@ -74,9 +74,10 @@ export const Header: React.FC<HeaderProps> = ({
       : 'text-accent';
 
   // Wi-Fi LAN URL
+  const port = window.location.port && window.location.port !== '5173' ? window.location.port : '8080';
   const ip =
-    serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '192.168.1.16');
-  const lanUrl = `http://${ip}:8080`;
+    serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1');
+  const lanUrl = `http://${ip}:${port}`;
 
   const handleCopyLanUrl = async () => {
     const ok = await copyToClipboard(lanUrl);
@@ -135,8 +136,13 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="text-xs">
             <span className="text-studio-textMuted mr-1.5">Mounted:</span>
             {isLoaded ? (
-              <span className="font-mono font-semibold text-accent">
-                {currentModel?.name}
+              <span className="font-mono font-semibold text-accent inline-flex items-center gap-1.5">
+                <span>{currentModel?.name}</span>
+                {engineStatus?.isMock && (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30 font-sans font-medium">
+                    Simulation Mode
+                  </span>
+                )}
               </span>
             ) : (
               <span className="font-mono text-studio-textMuted italic">Standby (No model loaded)</span>

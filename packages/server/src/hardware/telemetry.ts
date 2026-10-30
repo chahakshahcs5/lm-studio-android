@@ -21,12 +21,20 @@ export class HardwareMonitor {
   private cachedDeviceModel: string | null = null;
   private cachedBigCores: number[] | null = null;
   private cachedLittleCores: number[] | null = null;
+  private cachedBatteryTelemetry: BatteryTelemetry | null = null;
+  private cachedBatteryTimestamp: number = 0;
 
   constructor() {
     this.isAndroid =
-      fs.existsSync('/sys/class/power_supply/battery') ||
       fs.existsSync('/data/data/com.termux') ||
-      os.platform() === 'linux';
+      fs.existsSync('/system/bin/getprop') ||
+      Boolean(process.env.ANDROID_ROOT) ||
+      Boolean(process.env.TERMUX_VERSION) ||
+      fs.existsSync('/sys/class/power_supply/battery');
+  }
+
+  public getIsAndroid(): boolean {
+    return this.isAndroid;
   }
 
   private getProp(propName: string): string {
@@ -92,6 +100,11 @@ export class HardwareMonitor {
   }
 
   public getBatteryTelemetry(): BatteryTelemetry {
+    const now = Date.now();
+    if (this.cachedBatteryTelemetry && now - this.cachedBatteryTimestamp < 5000) {
+      return this.cachedBatteryTelemetry;
+    }
+
     let level: number | null = null;
     let temp: number | null = null;
     let isCharging: boolean | null = null;
@@ -257,13 +270,17 @@ export class HardwareMonitor {
       sensorLabel = 'Estimated Thermal';
     }
 
-    return {
+    const result: BatteryTelemetry = {
       level, // Genuine level or null (never fabricate fake numbers like 82%)
       temperature: temp,
       isCharging: isCharging ?? false,
       source: level !== null ? source : 'estimated',
       sensorLabel,
     };
+
+    this.cachedBatteryTelemetry = result;
+    this.cachedBatteryTimestamp = now;
+    return result;
   }
 
   private getQuickCpuUsage(): number {

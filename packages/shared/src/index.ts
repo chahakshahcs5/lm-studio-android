@@ -94,6 +94,7 @@ export interface RuntimeConfig {
 
 export interface EngineStatus {
   loaded: boolean;
+  isMock?: boolean;
   currentModel: LocalModel | null;
   activeConfig: RuntimeConfig | null;
   pid: number | null;

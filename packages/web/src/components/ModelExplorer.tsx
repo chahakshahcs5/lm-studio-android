@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Download,
@@ -48,6 +48,7 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   // Tuning options for model loading modal
   const [selectedModelForConfig, setSelectedModelForConfig] = useState<LocalModel | null>(null);
   const [threads, setThreads] = useState<number>(telemetry?.cpu.recommendedThreads || 4);
+  const [hasUserModifiedThreads, setHasUserModifiedThreads] = useState<boolean>(false);
   const [ctxSize, setCtxSize] = useState<number>(2048);
   const [flashAttn, setFlashAttn] = useState<boolean>(true);
   const [kvQuant, setKvQuant] = useState<'f16' | 'q8_0' | 'q4_0'>('f16');
@@ -70,8 +71,13 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
         const p = await presetsRes.json();
         setPresets(p);
       }
-    } catch {
-      // ignore
+    } catch (e: any) {
+      if (onError) {
+        onError({
+          title: 'Catalog Refresh Failed',
+          message: e.message || 'Failed to fetch models from the local server.',
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -82,10 +88,10 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   }, []);
 
   useEffect(() => {
-    if (telemetry?.cpu.recommendedThreads) {
+    if (!hasUserModifiedThreads && telemetry?.cpu.recommendedThreads) {
       setThreads(telemetry.cpu.recommendedThreads);
     }
-  }, [telemetry]);
+  }, [telemetry?.cpu.recommendedThreads, hasUserModifiedThreads]);
 
   const handleLoadModel = async (model: LocalModel) => {
     setLoadingModelId(model.id);
@@ -168,14 +174,16 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
 
   const phoneRamGb = telemetry ? Math.round(telemetry.ram.totalBytes / (1024 * 1024 * 1024)) : 6;
 
-  const filteredPresets = presets.filter((p) => {
-    const matchQuery =
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.quantization.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchTier = filterTier === 'all' || p.tier === filterTier;
-    return matchQuery && matchTier;
-  });
+  const filteredPresets = useMemo(() => {
+    return presets.filter((p) => {
+      const matchQuery =
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.quantization.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchTier = filterTier === 'all' || p.tier === filterTier;
+      return matchQuery && matchTier;
+    });
+  }, [presets, searchQuery, filterTier]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-studio-bg overflow-y-auto select-none p-6 md:p-8 space-y-8 transition-colors">
@@ -355,7 +363,11 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
                     min="1"
                     max="16"
                     value={threads}
-                    onChange={(e) => setThreads(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setThreads(isNaN(val) ? 1 : Math.max(1, Math.min(16, val)));
+                      setHasUserModifiedThreads(true);
+                    }}
                     className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-accent focus:outline-none"
                   />
                 </div>
@@ -408,9 +420,12 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
                   <input
                     type="number"
                     min="0"
-                    max="33"
+                    max="64"
                     value={gpuLayers}
-                    onChange={(e) => setGpuLayers(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setGpuLayers(isNaN(val) ? 0 : Math.max(0, Math.min(64, val)));
+                    }}
                     className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-studio-text focus:outline-none"
                   />
                 </div>

@@ -1,23 +1,14 @@
 import { Router, Request, Response } from 'express';
 import http from 'http';
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { hardwareMonitor } from '../hardware/telemetry.js';
 import { llamaEngine } from '../engine/llama.js';
 import { modelManager, CURATED_MODELS } from '../hf/models.js';
+import { getLocalIp } from '../utils/network.js';
 
 export const apiRouter = Router();
-
-function getLocalIp(): string {
-  const interfaces = os.networkInterfaces();
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        return iface.address;
-      }
-    }
-  }
-  return '127.0.0.1';
-}
 
 // System Status & Hardware Telemetry
 apiRouter.get('/api/status', (req: Request, res: Response) => {
@@ -31,7 +22,7 @@ apiRouter.get('/api/status', (req: Request, res: Response) => {
     telemetry,
     ip: getLocalIp(),
     platform: os.platform(),
-    isAndroid: hardwareMonitor['isAndroid'],
+    isAndroid: hardwareMonitor.getIsAndroid(),
   });
 });
 
@@ -50,21 +41,36 @@ apiRouter.get('/api/presets', (req: Request, res: Response) => {
 apiRouter.post('/api/load', async (req: Request, res: Response) => {
   try {
     const { path: modelPath, threads, ctxSize, flashAttn, kvQuant, gpuLayers, pinCores } = req.body;
-    if (!modelPath) {
-      return res.status(400).json({ error: 'Missing model path' });
+    if (!modelPath || typeof modelPath !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid model path' });
     }
 
     const localModels = modelManager.scanLocalModels();
     let target = localModels.find((m) => m.path === modelPath || m.id === modelPath);
     if (!target) {
-      // Direct path fallback
+      if (!fs.existsSync(modelPath)) {
+        return res.status(404).json({ error: `Model file not found at: ${modelPath}` });
+      }
+      if (!modelPath.toLowerCase().endsWith('.gguf')) {
+        return res.status(400).json({ error: 'Only .gguf model files can be mounted' });
+      }
+
+      const stat = fs.statSync(modelPath);
+      if (!stat.isFile()) {
+        return res.status(400).json({ error: 'Specified path is a directory, not a file' });
+      }
+
+      const sizeMb = stat.size / (1024 * 1024);
+      const sizeFormatted = sizeMb > 1000 ? `${(sizeMb / 1024).toFixed(2)} GB` : `${sizeMb.toFixed(1)} MB`;
+
       target = {
-        id: modelPath.split(/[/\\]/).pop() || 'model.gguf',
-        name: (modelPath.split(/[/\\]/).pop() || 'model').replace('.gguf', ''),
+        id: path.basename(modelPath),
+        name: path.basename(modelPath).replace('.gguf', ''),
         path: modelPath,
-        sizeBytes: 1024 * 1024 * 500,
-        sizeFormatted: '500 MB',
+        sizeBytes: stat.size,
+        sizeFormatted,
         location: 'custom',
+        lastModified: stat.mtimeMs,
       };
     }
 
@@ -91,8 +97,12 @@ apiRouter.post('/api/load', async (req: Request, res: Response) => {
 
 // Unload Model (Free RAM)
 apiRouter.post('/api/unload', async (req: Request, res: Response) => {
-  await llamaEngine.stop();
-  res.json({ success: true, message: 'RAM freed and llama-server unloaded' });
+  try {
+    await llamaEngine.stop();
+    res.json({ success: true, message: 'RAM freed and llama-server unloaded' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || 'Failed to stop engine' });
+  }
 });
 
 // Update TPS metric
@@ -125,17 +135,19 @@ apiRouter.get('/api/download_status', (req: Request, res: Response) => {
 // OpenAI Compatible Models Endpoint
 apiRouter.get('/v1/models', (req: Request, res: Response) => {
   const status = llamaEngine.getStatus();
-  const currentModel = status.currentModel?.name || 'none';
+  const currentModel = status.currentModel?.name;
   res.json({
     object: 'list',
-    data: [
-      {
-        id: currentModel,
-        object: 'model',
-        created: Math.floor(Date.now() / 1000),
-        owned_by: 'lm-studio-android',
-      },
-    ],
+    data: status.loaded && currentModel
+      ? [
+          {
+            id: currentModel,
+            object: 'model',
+            created: Math.floor(Date.now() / 1000),
+            owned_by: 'lm-studio-android',
+          },
+        ]
+      : [],
   });
 });
 
@@ -151,7 +163,7 @@ apiRouter.post(['/v1/chat/completions', '/v1/completions'], async (req: Request,
     });
   }
 
-  const isStream = req.body.stream !== false;
+  const isStream = req.body.stream === true;
 
   // Handle Mock Mode for developer testing without llama.cpp on PC
   if (llamaEngine.getIsMock()) {

@@ -10,7 +10,7 @@ export class LlamaEngine {
   private process: ChildProcess | null = null;
   private currentModel: LocalModel | null = null;
   private activeConfig: RuntimeConfig | null = null;
-  private port: number = 50053;
+  private port: number = parseInt(process.env.LLAMA_PORT || '50053', 10);
   private isMockMode: boolean = false;
   private tokensGeneratedTotal: number = 0;
   private lastRunTps: number = 0;
@@ -127,7 +127,7 @@ export class LlamaEngine {
     // Check system PATH
     const pathDirs = (process.env.PATH || '').split(path.delimiter);
     for (const dir of pathDirs) {
-      for (const name of ['llama-server', 'server']) {
+      for (const name of ['llama-server']) {
         const p = path.join(dir, name);
         if (fs.existsSync(p)) {
           try {
@@ -147,9 +147,10 @@ export class LlamaEngine {
     const isAlive = this.isMockMode || (this.process !== null && !this.process.killed && this.process.exitCode === null);
     return {
       loaded: isAlive && this.currentModel !== null,
+      isMock: this.isMockMode,
       currentModel: isAlive ? this.currentModel : null,
       activeConfig: isAlive ? this.activeConfig : null,
-      pid: this.process?.pid || null,
+      pid: this.process?.pid ?? null,
       port: this.port,
       tokensGeneratedTotal: this.tokensGeneratedTotal,
       lastRunTps: this.lastRunTps,
@@ -293,31 +294,33 @@ export class LlamaEngine {
   }
 
   public async stop(): Promise<void> {
-    if (this.process) {
+    const proc = this.process;
+    const pid = proc?.pid;
+
+    if (proc) {
       this.isIntentionalStop = true;
       try {
-        this.process.kill('SIGTERM');
+        // If taskset spawned llama-server as child on Linux, terminate the child process tree
+        if (os.platform() === 'linux' && pid) {
+          try {
+            execFileSync('pkill', ['-9', '-P', pid.toString()], {
+              timeout: 1000,
+              stdio: ['ignore', 'ignore', 'ignore'],
+            });
+          } catch {
+            // ignore
+          }
+        }
+        proc.kill('SIGTERM');
         await new Promise((resolve) => setTimeout(resolve, 250));
-        if (this.process && !this.process.killed) {
-          this.process.kill('SIGKILL');
+        if (!proc.killed) {
+          proc.kill('SIGKILL');
         }
       } catch {
         // ignore
       }
       this.process = null;
       this.isIntentionalStop = false;
-    }
-
-    // Clean up any orphaned server processes on Termux/Linux
-    if (os.platform() === 'linux') {
-      try {
-        execFileSync('pkill', ['-9', '-f', 'llama-server'], {
-          timeout: 1000,
-          stdio: ['ignore', 'ignore', 'ignore'],
-        });
-      } catch {
-        // ignore
-      }
     }
 
     this.isMockMode = false;

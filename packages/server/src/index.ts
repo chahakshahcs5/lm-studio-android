@@ -1,19 +1,23 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { apiRouter } from './routes/api.js';
 import { hardwareMonitor } from './hardware/telemetry.js';
 import { llamaEngine } from './engine/llama.js';
 import { modelManager } from './hf/models.js';
+import { getLocalIp } from './utils/network.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
+const HOST = process.env.HOST || '0.0.0.0';
 const app = express();
 const server = http.createServer(app);
 
@@ -86,31 +90,6 @@ const telemetryInterval = setInterval(() => {
   }
 }, 1000);
 
-import os from 'os';
-
-function getLocalIp(): string {
-  const interfaces = os.networkInterfaces();
-  const candidates: string[] = [];
-  for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name] || []) {
-      if (iface.family === 'IPv4' && !iface.internal) {
-        if (
-          name.toLowerCase().includes('wlan') ||
-          name.toLowerCase().includes('wi-fi') ||
-          name.toLowerCase().includes('wifi')
-        ) {
-          return iface.address;
-        }
-        candidates.push(iface.address);
-      }
-    }
-  }
-  const localPrivate = candidates.find(
-    (ip) => ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')
-  );
-  return localPrivate || candidates[0] || '127.0.0.1';
-}
-
 let isShuttingDown = false;
 
 const cleanup = async () => {
@@ -165,7 +144,7 @@ const cleanup = async () => {
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, HOST, () => {
   const localIp = getLocalIp();
   console.log('='.repeat(70));
   console.log('   ⚡ LM STUDIO ANDROID - SMARTPHONE AI ACCELERATOR SERVER');

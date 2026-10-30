@@ -142,9 +142,11 @@ export class ModelManager {
     error: null,
   };
   private onProgressCallback?: (state: DownloadState) => void;
+  private cachedLocalModels: LocalModel[] = [];
+  private lastScanTimestamp: number = 0;
 
   constructor() {
-    this.modelsDir = path.join(os.homedir(), 'models');
+    this.modelsDir = process.env.MODELS_DIR || path.join(os.homedir(), 'models');
     if (!fs.existsSync(this.modelsDir)) {
       try {
         fs.mkdirSync(this.modelsDir, { recursive: true });
@@ -166,7 +168,12 @@ export class ModelManager {
     return { ...this.downloadState };
   }
 
-  public scanLocalModels(): LocalModel[] {
+  public scanLocalModels(force: boolean = false): LocalModel[] {
+    const now = Date.now();
+    if (!force && this.cachedLocalModels.length > 0 && now - this.lastScanTimestamp < 3000) {
+      return this.cachedLocalModels;
+    }
+
     const list: LocalModel[] = [];
     const seen = new Set<string>();
 
@@ -222,6 +229,8 @@ export class ModelManager {
       scanDir(d, 'downloads');
     }
 
+    this.cachedLocalModels = list;
+    this.lastScanTimestamp = now;
     return list;
   }
 
@@ -231,12 +240,47 @@ export class ModelManager {
     }
 
     const { url, filename, id } = presetOrUrl;
-    const dest = path.join(this.modelsDir, filename);
+
+    // Validate and sanitize filename to prevent path traversal
+    const safeFilename = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+    if (!safeFilename || !safeFilename.toLowerCase().endsWith('.gguf')) {
+      throw new Error('Invalid model filename. Must be a valid .gguf filename.');
+    }
+
+    const dest = path.join(this.modelsDir, safeFilename);
+    const resolvedModelsDir = path.resolve(this.modelsDir);
+    if (!path.resolve(dest).startsWith(resolvedModelsDir)) {
+      throw new Error('Security violation: Destination path must reside within models directory.');
+    }
+
+    // SSRF validation
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error('Invalid download URL format.');
+    }
+
+    if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+      throw new Error('Only HTTP and HTTPS download protocols are allowed.');
+    }
+
+    const hostname = parsedUrl.hostname.toLowerCase();
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '0.0.0.0' ||
+      hostname.endsWith('.internal') ||
+      hostname.endsWith('.local')
+    ) {
+      throw new Error('Restricted target: Cannot download from internal or loopback addresses.');
+    }
 
     this.downloadState = {
       active: true,
-      modelId: id || filename,
-      modelName: filename,
+      modelId: id || safeFilename,
+      modelName: safeFilename,
       downloadedBytes: 0,
       totalBytes: 0,
       percent: 0,
@@ -247,10 +291,11 @@ export class ModelManager {
 
     this.notifyProgress();
 
-    this.downloadFile(url, dest)
+    this.downloadFile(url, dest, 0)
       .then(() => {
         this.downloadState.active = false;
         this.downloadState.percent = 100;
+        this.lastScanTimestamp = 0; // Invalidate cache so new model appears immediately
         this.notifyProgress();
       })
       .catch((err) => {
@@ -269,7 +314,11 @@ export class ModelManager {
     return this.getDownloadState();
   }
 
-  private downloadFile(url: string, destPath: string): Promise<void> {
+  private downloadFile(url: string, destPath: string, redirectCount: number = 0): Promise<void> {
+    if (redirectCount > 5) {
+      return Promise.reject(new Error('Too many HTTP redirects (exceeded limit of 5).'));
+    }
+
     return new Promise((resolve, reject) => {
       const parsedUrl = new URL(url);
       const getter = parsedUrl.protocol === 'https:' ? https : http;
@@ -283,8 +332,8 @@ export class ModelManager {
         },
         (res) => {
           if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-            // Handle redirect
-            return this.downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
+            // Handle redirect with incremented count
+            return this.downloadFile(res.headers.location, destPath, redirectCount + 1).then(resolve).catch(reject);
           }
 
           if (res.statusCode !== 200) {

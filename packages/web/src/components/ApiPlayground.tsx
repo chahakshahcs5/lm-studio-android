@@ -14,8 +14,9 @@ export const ApiPlayground: React.FC<ApiPlaygroundProps> = ({ engineStatus, serv
   const [isTesting, setIsTesting] = useState<boolean>(false);
 
   const modelName = engineStatus?.currentModel?.name || 'local-phone-model';
+  const port = window.location.port && window.location.port !== '5173' ? window.location.port : '8080';
   const ip = serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1');
-  const apiBase = `${window.location.protocol}//${ip}:8080/v1`;
+  const apiBase = `${window.location.protocol}//${ip}:${port}/v1`;
 
   const handleCopy = async (text: string, key: string) => {
     const ok = await copyToClipboard(text);
@@ -102,7 +103,7 @@ async function main() {
 main();
 `;
 
-  const curlSnippet = `curl http://${ip}:8080/v1/chat/completions \\
+  const curlSnippet = `curl http://${ip}:${port}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "${modelName}",

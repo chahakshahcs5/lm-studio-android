@@ -123,6 +123,7 @@ export function useTheme() {
 
       // Map --accent to primary for backwards-compatibility
       root.style.setProperty('--accent', primary);
+      root.style.setProperty('--accent-hover', hexToRgba(primary, 0.85));
       root.style.setProperty('--accent-muted', hexToRgba(primary, 0.14));
       root.style.setProperty('--accent-glow', hexToRgba(primary, 0.35));
 

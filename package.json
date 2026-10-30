@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run build:shared && npm run dev --workspaces",
+    "dev": "npm run build:shared && npm run dev --workspaces --if-present",
     "dev:server": "npm run dev -w @lm-studio-android/server",
     "dev:web": "npm run dev -w @lm-studio-android/web",
     "build": "npm run build:shared && npm run build:server && npm run build:web",

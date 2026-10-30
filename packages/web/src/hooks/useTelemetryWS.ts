@@ -8,10 +8,17 @@ export function useTelemetryWS() {
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [serverIp, setServerIp] = useState<string>('127.0.0.1');
   const wsRef = useRef<WebSocket | null>(null);
+  const retryDelayRef = useRef<number>(1000);
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const connect = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.port === '5173' ? 'localhost:8080' : window.location.host;
+    const host = window.location.host;
     const wsUrl = `${protocol}//${host}/ws`;
 
     try {
@@ -20,6 +27,7 @@ export function useTelemetryWS() {
 
       ws.onopen = () => {
         setIsConnected(true);
+        retryDelayRef.current = 1000; // Reset backoff on successful connect
       };
 
       ws.onmessage = (event) => {
@@ -32,28 +40,34 @@ export function useTelemetryWS() {
           } else if (msg.type === 'download_progress') {
             setDownloadState(msg.data);
           }
-        } catch (e) {
+        } catch {
           // ignore parse errors
         }
       };
 
       ws.onclose = () => {
         setIsConnected(false);
-        // Exponential reconnect
-        setTimeout(connect, 3000);
+        const delay = retryDelayRef.current;
+        retryDelayRef.current = Math.min(delay * 1.5, 10000); // Exponential backoff up to 10s
+        reconnectTimerRef.current = setTimeout(connect, delay);
       };
 
       ws.onerror = () => {
         ws.close();
       };
     } catch {
-      setTimeout(connect, 3000);
+      const delay = retryDelayRef.current;
+      retryDelayRef.current = Math.min(delay * 1.5, 10000);
+      reconnectTimerRef.current = setTimeout(connect, delay);
     }
   }, []);
 
   useEffect(() => {
     connect();
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+      }
       if (wsRef.current) {
         wsRef.current.close();
       }
