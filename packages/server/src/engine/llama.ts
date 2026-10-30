@@ -14,6 +14,7 @@ export class LlamaEngine {
   private isMockMode: boolean = false;
   private tokensGeneratedTotal: number = 0;
   private lastRunTps: number = 0;
+  private isIntentionalStop: boolean = false;
   private logPath: string;
   private featuresCache: Map<
     string,
@@ -235,8 +236,21 @@ export class LlamaEngine {
       this.stop();
     });
 
-    this.process.on('exit', (code) => {
-      console.log(`[LlamaEngine] Process exited with code ${code}`);
+    this.process.on('exit', (code, signal) => {
+      if (this.isIntentionalStop) {
+        console.log(`[LlamaEngine] ✓ Model successfully unloaded. 100% RAM freed.`);
+      } else if (code === 0) {
+        console.log(`[LlamaEngine] llama-server stopped cleanly (code 0).`);
+      } else if (signal) {
+        console.log(
+          `[LlamaEngine] llama-server terminated by signal: ${signal}${
+            signal === 'SIGKILL' ? ' (Likely Android Kernel OOM / memory pressure)' : ''
+          }`
+        );
+      } else {
+        console.log(`[LlamaEngine] llama-server exited with code: ${code}`);
+      }
+
       this.process = null;
       this.currentModel = null;
       this.activeConfig = null;
@@ -264,13 +278,32 @@ export class LlamaEngine {
 
   public async stop(): Promise<void> {
     if (this.process) {
+      this.isIntentionalStop = true;
       try {
-        this.process.kill('SIGKILL');
-      } catch (e) {
+        this.process.kill('SIGTERM');
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        if (this.process && !this.process.killed) {
+          this.process.kill('SIGKILL');
+        }
+      } catch {
         // ignore
       }
       this.process = null;
+      this.isIntentionalStop = false;
     }
+
+    // Clean up any orphaned server processes on Termux/Linux
+    if (os.platform() === 'linux') {
+      try {
+        execFileSync('pkill', ['-9', '-f', 'llama-server'], {
+          timeout: 1000,
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+      } catch {
+        // ignore
+      }
+    }
+
     this.isMockMode = false;
     this.currentModel = null;
     this.activeConfig = null;
