@@ -25,6 +25,7 @@ export class LlamaEngine {
       path.join(os.homedir(), 'llama.cpp', 'bin', 'llama-server'),
       path.join(os.homedir(), 'llama.cpp', 'llama-server'),
       '/data/data/com.termux/files/usr/bin/llama-server',
+      '/data/data/com.termux/files/usr/bin/server',
       path.join(os.homedir(), 'bin', 'llama-server'),
     ];
 
@@ -38,11 +39,28 @@ export class LlamaEngine {
         }
       }
     }
+
+    // Check system PATH
+    const pathDirs = (process.env.PATH || '').split(path.delimiter);
+    for (const dir of pathDirs) {
+      for (const name of ['llama-server', 'server']) {
+        const p = path.join(dir, name);
+        if (fs.existsSync(p)) {
+          try {
+            fs.accessSync(p, fs.constants.X_OK);
+            return p;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+
     return null;
   }
 
   public getStatus(): EngineStatus {
-    const isAlive = this.isMockMode || (this.process !== null && !this.process.killed);
+    const isAlive = this.isMockMode || (this.process !== null && !this.process.killed && this.process.exitCode === null);
     return {
       loaded: isAlive && this.currentModel !== null,
       currentModel: isAlive ? this.currentModel : null,
@@ -70,7 +88,7 @@ export class LlamaEngine {
     const cpuTopo = hardwareMonitor.detectCpuTopology();
     const threads = config.threads || cpuTopo.recommendedThreads;
 
-    const args: string[] = [
+    const baseArgs: string[] = [
       '-m', model.path,
       '-c', config.ctxSize.toString(),
       '-t', threads.toString(),
@@ -78,36 +96,51 @@ export class LlamaEngine {
       '--port', this.port.toString(),
     ];
 
+    // Optional acceleration flags
+    const accelArgs = [...baseArgs];
     if (config.flashAttn) {
-      args.push('--flash-attn');
+      accelArgs.push('--flash-attn');
     }
     if (config.kvQuant && config.kvQuant !== 'f16') {
-      args.push('-ctk', config.kvQuant, '-ctv', config.kvQuant);
+      accelArgs.push('-ctk', config.kvQuant, '-ctv', config.kvQuant);
     }
     if (config.gpuLayers > 0) {
-      args.push('-ngl', config.gpuLayers.toString());
+      accelArgs.push('-ngl', config.gpuLayers.toString());
     }
 
     let executable = binary;
-    let spawnArgs = args;
+    let spawnArgs = accelArgs;
 
-    // Pin to ARM big cores if available on Linux/Android
+    // Pin to ARM big cores if taskset is available
     if (config.pinCores && cpuTopo.affinityMask && os.platform() === 'linux') {
-      spawnArgs = ['-c', cpuTopo.affinityMask, binary, ...args];
-      executable = 'taskset';
+      const hasTaskset =
+        fs.existsSync('/system/bin/taskset') ||
+        fs.existsSync('/data/data/com.termux/files/usr/bin/taskset') ||
+        fs.existsSync('/usr/bin/taskset');
+      if (hasTaskset) {
+        spawnArgs = ['-c', cpuTopo.affinityMask, binary, ...accelArgs];
+        executable = 'taskset';
+      }
     }
 
     console.log(`[LlamaEngine] Spawning: ${executable} ${spawnArgs.join(' ')}`);
 
-    const logStream = fs.createWriteStream(this.logPath, { flags: 'a' });
-    this.process = spawn(executable, spawnArgs, {
-      detached: false,
-      stdio: ['ignore', logStream, logStream],
-      env: {
-        ...process.env,
-        LD_LIBRARY_PATH: `${path.join(os.homedir(), 'llama.cpp', 'build', 'bin')}:${path.join(os.homedir(), 'llama.cpp', 'lib')}:${process.env.LD_LIBRARY_PATH || ''}`,
-      },
-    });
+    // Ensure log file exists and open file descriptor safely (Fixes fd: null stdio error)
+    const logFd = fs.openSync(this.logPath, 'a');
+
+    try {
+      this.process = spawn(executable, spawnArgs, {
+        detached: false,
+        stdio: ['ignore', logFd, logFd],
+        env: {
+          ...process.env,
+          LD_LIBRARY_PATH: `${path.join(os.homedir(), 'llama.cpp', 'build', 'bin')}:${path.join(os.homedir(), 'llama.cpp', 'lib')}:${process.env.LD_LIBRARY_PATH || ''}`,
+        },
+      });
+    } finally {
+      // Close parent copy of fd safely; child process retains cloned descriptor
+      fs.closeSync(logFd);
+    }
 
     this.process.on('error', (err) => {
       console.error('[LlamaEngine] Process error:', err);
@@ -122,10 +155,18 @@ export class LlamaEngine {
     });
 
     // Wait for health check
-    const isReady = await this.pollHealth(30);
+    const isReady = await this.pollHealth(35);
     if (!isReady) {
+      let errMsg = 'Engine failed to initialize model within 35 seconds.';
+      if (fs.existsSync(this.logPath)) {
+        try {
+          const lines = fs.readFileSync(this.logPath, 'utf8').trim().split('\n');
+          const recent = lines.slice(-8).join('\n');
+          if (recent) errMsg = `Server Log:\n${recent}`;
+        } catch {}
+      }
       await this.stop();
-      throw new Error('Engine failed to bind or initialize weights within 30s.');
+      throw new Error(errMsg);
     }
 
     this.currentModel = model;
@@ -163,16 +204,25 @@ export class LlamaEngine {
     const start = Date.now();
     return new Promise((resolve) => {
       const check = () => {
+        // If process exited prematurely (e.g. invalid arguments or OOM)
+        if (this.process === null || this.process.exitCode !== null) {
+          return resolve(false);
+        }
+
         if (Date.now() - start > maxSeconds * 1000) {
           return resolve(false);
         }
 
         const req = http.get(`http://127.0.0.1:${this.port}/health`, (res) => {
-          if (res.statusCode === 200) {
-            resolve(true);
-          } else {
+          let body = '';
+          res.on('data', (chunk) => (body += chunk));
+          res.on('end', () => {
+            if (res.statusCode === 200) {
+              return resolve(true);
+            }
+            // HTTP 503 means {"status": "loading model"} - keep polling until weights load!
             setTimeout(check, 500);
-          }
+          });
         });
 
         req.on('error', () => {
