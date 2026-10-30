@@ -12,8 +12,8 @@
     "dev:web": "npm run dev -w @lm-studio-android/web",
     "build": "npm run build:shared && npm run build:server && npm run build:web",
     "build:shared": "npm run build -w @lm-studio-android/shared",
-    "build:server": "npm run build:shared && npm run build -w @lm-studio-android/server",
-    "build:web": "npm run build:shared && npm run build -w @lm-studio-android/web",
+    "build:server": "npm run build -w @lm-studio-android/server",
+    "build:web": "npm run build -w @lm-studio-android/web",
     "start": "node packages/server/dist/index.js"
   },
   "devDependencies": {
