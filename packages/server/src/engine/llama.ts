@@ -15,6 +15,8 @@ export class LlamaEngine {
   private tokensGeneratedTotal: number = 0;
   private lastRunTps: number = 0;
   private isIntentionalStop: boolean = false;
+  private lastExitCode: number | null = null;
+  private lastExitSignal: string | null = null;
   private logPath: string;
   private featuresCache: Map<
     string,
@@ -175,7 +177,6 @@ export class LlamaEngine {
       '-m', model.path,
       '-c', config.ctxSize.toString(),
       '-t', threads.toString(),
-      '-np', '1',
       '--host', '127.0.0.1',
       '--port', this.port.toString(),
     ];
@@ -215,8 +216,8 @@ export class LlamaEngine {
 
     console.log(`[LlamaEngine] Spawning: ${executable} ${spawnArgs.join(' ')}`);
 
-    // Ensure log file exists and open file descriptor safely (Fixes fd: null stdio error)
-    const logFd = fs.openSync(this.logPath, 'a');
+    // Clean fresh log for each spawn
+    const logFd = fs.openSync(this.logPath, 'w');
 
     try {
       this.process = spawn(executable, spawnArgs, {
@@ -232,12 +233,18 @@ export class LlamaEngine {
       fs.closeSync(logFd);
     }
 
+    this.lastExitCode = null;
+    this.lastExitSignal = null;
+
     this.process.on('error', (err) => {
       console.error('[LlamaEngine] Process error:', err);
       this.stop();
     });
 
     this.process.on('exit', (code, signal) => {
+      this.lastExitCode = code;
+      this.lastExitSignal = signal;
+
       if (this.isIntentionalStop) {
         console.log(`[LlamaEngine] ✓ Model successfully unloaded. 100% RAM freed.`);
       } else if (code === 0) {
@@ -261,11 +268,19 @@ export class LlamaEngine {
     const isReady = await this.pollHealth(90);
     if (!isReady) {
       let errMsg = 'Engine failed to initialize model within 90 seconds. Model weights might still be allocating or RAM is constrained.';
+      if (this.lastExitCode !== null) {
+        errMsg = `llama-server exited with code: ${this.lastExitCode}. Check arguments or model compatibility.`;
+      } else if (this.lastExitSignal) {
+        errMsg = `llama-server terminated by signal: ${this.lastExitSignal}${
+          this.lastExitSignal === 'SIGKILL' ? ' (Android Kernel OOM / memory pressure)' : ''
+        }.`;
+      }
+
       if (fs.existsSync(this.logPath)) {
         try {
           const lines = fs.readFileSync(this.logPath, 'utf8').trim().split('\n');
-          const recent = lines.slice(-10).join('\n');
-          if (recent) errMsg = `Server Log:\n${recent}`;
+          const recent = lines.slice(-15).join('\n');
+          if (recent) errMsg = `${errMsg}\n\nServer Log:\n${recent}`;
         } catch {}
       }
       await this.stop();
@@ -335,33 +350,64 @@ export class LlamaEngine {
   private pollHealth(maxSeconds: number): Promise<boolean> {
     const start = Date.now();
     return new Promise((resolve) => {
+      let isDone = false;
+      let timer: NodeJS.Timeout | null = null;
+
+      const finish = (result: boolean) => {
+        if (isDone) return;
+        isDone = true;
+        if (timer) clearTimeout(timer);
+        resolve(result);
+      };
+
+      // If child process exits or errors, abort polling INSTANTLY (under 1ms)
+      if (this.process) {
+        this.process.once('exit', () => finish(false));
+        this.process.once('error', () => finish(false));
+      }
+
       const check = () => {
+        if (isDone) return;
+
         // If process exited prematurely (e.g. invalid arguments or OOM)
         if (this.process === null || this.process.exitCode !== null) {
-          return resolve(false);
+          return finish(false);
         }
 
         if (Date.now() - start > maxSeconds * 1000) {
-          return resolve(false);
+          return finish(false);
         }
 
-        const req = http.get(`http://127.0.0.1:${this.port}/health`, (res) => {
-          let body = '';
-          res.on('data', (chunk) => (body += chunk));
-          res.on('end', () => {
-            if (res.statusCode === 200) {
-              return resolve(true);
-            }
-            // HTTP 503 means {"status": "loading model"} - keep polling until weights load!
-            setTimeout(check, 500);
-          });
+        const req = http.get(
+          `http://127.0.0.1:${this.port}/health`,
+          { timeout: 1500 },
+          (res) => {
+            let body = '';
+            res.on('data', (chunk) => (body += chunk));
+            res.on('end', () => {
+              if (res.statusCode === 200) {
+                return finish(true);
+              }
+              // HTTP 503 means {"status": "loading model"} - keep polling until weights load!
+              if (!isDone) {
+                timer = setTimeout(check, 500);
+              }
+            });
+          }
+        );
+
+        req.on('timeout', () => {
+          req.destroy();
+          if (!isDone) timer = setTimeout(check, 500);
         });
 
         req.on('error', () => {
-          setTimeout(check, 500);
+          if (!isDone) timer = setTimeout(check, 500);
         });
+
         req.end();
       };
+
       check();
     });
   }
