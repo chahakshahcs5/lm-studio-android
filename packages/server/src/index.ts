@@ -70,7 +70,7 @@ modelManager.setProgressCallback((state) => {
 });
 
 // Periodic Telemetry Broadcast (1Hz)
-setInterval(() => {
+const telemetryInterval = setInterval(() => {
   if (connectedClients.size === 0) return;
 
   const status = llamaEngine.getStatus();
@@ -111,9 +111,52 @@ function getLocalIp(): string {
   return localPrivate || candidates[0] || '127.0.0.1';
 }
 
+let isShuttingDown = false;
+
 const cleanup = async () => {
-  console.log('\n[Server] Shutting down gracefully...');
-  await llamaEngine.stop();
+  if (isShuttingDown) {
+    console.log('[Server] Force exit.');
+    process.exit(0);
+  }
+  isShuttingDown = true;
+  console.log('\n[Server] Shutting down LM Studio Android...');
+
+  // Guaranteed timeout fallback so Ctrl+C never hangs
+  const forceTimer = setTimeout(() => {
+    process.exit(0);
+  }, 600);
+  forceTimer.unref();
+
+  clearInterval(telemetryInterval);
+
+  // Terminate open WebSocket clients so HTTP server can unbind
+  for (const client of connectedClients) {
+    try {
+      client.terminate();
+    } catch {
+      // ignore
+    }
+  }
+  connectedClients.clear();
+
+  try {
+    wss.close();
+  } catch {
+    // ignore
+  }
+
+  // Stop llama-server and clean up child processes
+  try {
+    await llamaEngine.stop();
+  } catch {
+    // ignore
+  }
+
+  // Close HTTP server and drop idle/open connections
+  if (typeof (server as any).closeAllConnections === 'function') {
+    (server as any).closeAllConnections();
+  }
+
   server.close(() => {
     process.exit(0);
   });
