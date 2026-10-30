@@ -174,7 +174,12 @@ fi
 cd "$REPO_DIR"
 echo -e "\n${BLUE}[*] Installing Node packages and building UI...${NC}"
 npm install --no-audit --no-fund
-npm run build
+echo -e "${BLUE}[1/3] Compiling shared type definitions...${NC}"
+npm run build:shared
+echo -e "${BLUE}[2/3] Compiling Node.js hub server...${NC}"
+npm run build:server
+echo -e "${BLUE}[3/3] Compiling React Obsidian UI...${NC}"
+npm run build:web
 
 # ==============================================================================
 # 6. DETECT WI-FI IP & LAUNCH SERVER

@@ -7,13 +7,13 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces",
+    "dev": "npm run build:shared && npm run dev --workspaces",
     "dev:server": "npm run dev -w @lm-studio-android/server",
     "dev:web": "npm run dev -w @lm-studio-android/web",
-    "build": "npm run build --workspaces",
+    "build": "npm run build:shared && npm run build:server && npm run build:web",
     "build:shared": "npm run build -w @lm-studio-android/shared",
-    "build:web": "npm run build -w @lm-studio-android/web",
     "build:server": "npm run build -w @lm-studio-android/server",
+    "build:web": "npm run build -w @lm-studio-android/web",
     "start": "node packages/server/dist/index.js"
   },
   "devDependencies": {
