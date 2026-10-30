@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import http from 'http';
+import net from 'net';
 import { EngineStatus, LocalModel, RuntimeConfig } from '@lm-studio-android/shared';
 import { hardwareMonitor } from '../hardware/telemetry.js';
 
@@ -157,8 +158,70 @@ export class LlamaEngine {
     };
   }
 
+  public isPortAvailable(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => {
+        resolve(false);
+      });
+      server.once('listening', () => {
+        server.close(() => resolve(true));
+      });
+      server.listen(port, '127.0.0.1');
+    });
+  }
+
+  public async findAvailablePort(preferredPort: number): Promise<number> {
+    if (await this.isPortAvailable(preferredPort)) {
+      return preferredPort;
+    }
+
+    console.warn(`[LlamaEngine] Port ${preferredPort} is restricted or busy. Searching for available socket port...`);
+
+    // Priority candidates avoiding Windows Hyper-V and common conflicts
+    const candidates = [preferredPort + 1, preferredPort + 2, 8081, 8082, 38080, 38081, 28080, 50054, 50055];
+    for (const p of candidates) {
+      if (await this.isPortAvailable(p)) {
+        console.log(`[LlamaEngine] Successfully resolved free socket port: ${p}`);
+        return p;
+      }
+    }
+
+    // Dynamic range fallback
+    for (let p = 50056; p <= 50100; p++) {
+      if (await this.isPortAvailable(p)) {
+        console.log(`[LlamaEngine] Successfully resolved free socket port: ${p}`);
+        return p;
+      }
+    }
+
+    return preferredPort;
+  }
+
+  private killOrphanLlamaServers(): void {
+    try {
+      if (os.platform() === 'win32') {
+        execFileSync('taskkill', ['/F', '/IM', 'llama-server.exe', '/T'], {
+          timeout: 1000,
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+      } else {
+        // Android Termux, Linux, macOS
+        execFileSync('pkill', ['-9', '-f', 'llama-server'], {
+          timeout: 1000,
+          stdio: ['ignore', 'ignore', 'ignore'],
+        });
+      }
+    } catch {
+      // Process might not exist, ignore
+    }
+  }
+
   public async start(model: LocalModel, config: RuntimeConfig): Promise<EngineStatus> {
     await this.stop();
+
+    // Small delay to ensure sockets are freed by OS after process termination
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     const binary = this.findBinary();
     if (!binary) {
@@ -171,6 +234,12 @@ export class LlamaEngine {
     }
 
     this.isMockMode = false;
+
+    // Dynamically resolve an open, unblocked port
+    const preferredPort = parseInt(process.env.LLAMA_PORT || '50053', 10);
+    this.port = await this.findAvailablePort(preferredPort);
+    console.log(`[LlamaEngine] Using port ${this.port} for internal llama-server`);
+
     const cpuTopo = hardwareMonitor.detectCpuTopology();
     const threads = config.threads || cpuTopo.recommendedThreads;
 
@@ -322,6 +391,9 @@ export class LlamaEngine {
       this.process = null;
       this.isIntentionalStop = false;
     }
+
+    // Always clean up any orphan llama-server processes left from prior runs
+    this.killOrphanLlamaServers();
 
     this.isMockMode = false;
     this.currentModel = null;
