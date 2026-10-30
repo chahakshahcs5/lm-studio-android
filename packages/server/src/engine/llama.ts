@@ -175,6 +175,7 @@ export class LlamaEngine {
       '-m', model.path,
       '-c', config.ctxSize.toString(),
       '-t', threads.toString(),
+      '-np', '1',
       '--host', '127.0.0.1',
       '--port', this.port.toString(),
     ];
@@ -256,14 +257,14 @@ export class LlamaEngine {
       this.activeConfig = null;
     });
 
-    // Wait for health check
-    const isReady = await this.pollHealth(35);
+    // Wait for health check (90s limit for large models on smartphone storage)
+    const isReady = await this.pollHealth(90);
     if (!isReady) {
-      let errMsg = 'Engine failed to initialize model within 35 seconds.';
+      let errMsg = 'Engine failed to initialize model within 90 seconds. Model weights might still be allocating or RAM is constrained.';
       if (fs.existsSync(this.logPath)) {
         try {
           const lines = fs.readFileSync(this.logPath, 'utf8').trim().split('\n');
-          const recent = lines.slice(-8).join('\n');
+          const recent = lines.slice(-10).join('\n');
           if (recent) errMsg = `Server Log:\n${recent}`;
         } catch {}
       }

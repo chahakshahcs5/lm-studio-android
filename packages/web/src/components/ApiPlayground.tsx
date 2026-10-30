@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Terminal, Copy, Check, ExternalLink, Code2, Play } from 'lucide-react';
 import { EngineStatus } from '@lm-studio-android/shared';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface ApiPlaygroundProps {
   engineStatus: EngineStatus | null;
@@ -16,10 +17,12 @@ export const ApiPlayground: React.FC<ApiPlaygroundProps> = ({ engineStatus, serv
   const ip = serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '127.0.0.1');
   const apiBase = `${window.location.protocol}//${ip}:8080/v1`;
 
-  const handleCopy = (text: string, key: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
+  const handleCopy = async (text: string, key: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    }
   };
 
   const handleTestPing = async () => {

@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
+import { copyToClipboard } from '../utils/clipboard';
 
 export interface ErrorModalData {
   isOpen: boolean;
@@ -82,11 +83,13 @@ export const ErrorModal: React.FC<ErrorModalProps> = ({ data, onClose }) => {
 
   const activeTips = tips && tips.length > 0 ? tips : defaultTips;
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     const textToCopy = `=== LM STUDIO ANDROID DIAGNOSTIC REPORT ===\nTitle: ${title}\nMessage: ${message}\n\n=== LOG OUTPUT ===\n${rawLogs}\n===========================================`;
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyToClipboard(textToCopy);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return createPortal(

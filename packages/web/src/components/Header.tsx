@@ -17,6 +17,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { EngineStatus, HardwareTelemetry } from '@lm-studio-android/shared';
+import { copyToClipboard } from '../utils/clipboard';
 
 interface HeaderProps {
   activeTab: 'chat' | 'models' | 'api';
@@ -72,10 +73,12 @@ export const Header: React.FC<HeaderProps> = ({
     serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '192.168.1.16');
   const lanUrl = `http://${ip}:8080`;
 
-  const handleCopyLanUrl = () => {
-    navigator.clipboard.writeText(lanUrl);
-    setCopiedIp(true);
-    setTimeout(() => setCopiedIp(false), 2000);
+  const handleCopyLanUrl = async () => {
+    const ok = await copyToClipboard(lanUrl);
+    if (ok) {
+      setCopiedIp(true);
+      setTimeout(() => setCopiedIp(false), 2000);
+    }
   };
 
   return (

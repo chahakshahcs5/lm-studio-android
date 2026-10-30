@@ -22,6 +22,7 @@ import {
   SystemPromptPreset,
 } from '@lm-studio-android/shared';
 import { CustomSelect } from './ui/CustomSelect';
+import { copyToClipboard } from '../utils/clipboard';
 
 const PRESET_SYSTEM_PROMPTS: SystemPromptPreset[] = [
   {
@@ -97,10 +98,12 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
     scrollToBottom();
   }, [messages]);
 
-  const handleCopy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleCopy = async (text: string, id: string) => {
+    const ok = await copyToClipboard(text);
+    if (ok) {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    }
   };
 
   const handleSend = async (contentToSend?: string) => {
