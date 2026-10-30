@@ -1,0 +1,22 @@
+{
+  "name": "lm-studio-android",
+  "version": "1.0.0",
+  "description": "LM Studio Android - Local Edge AI Hub & Smartphone GPU Accelerator",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces",
+    "dev:server": "npm run dev -w @lm-studio-android/server",
+    "dev:web": "npm run dev -w @lm-studio-android/web",
+    "build": "npm run build --workspaces",
+    "build:shared": "npm run build -w @lm-studio-android/shared",
+    "build:web": "npm run build -w @lm-studio-android/web",
+    "build:server": "npm run build -w @lm-studio-android/server",
+    "start": "node packages/server/dist/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  }
+}
