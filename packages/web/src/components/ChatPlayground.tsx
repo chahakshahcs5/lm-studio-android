@@ -1275,7 +1275,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
             <input
               type="range"
               min="256"
-              max="4096"
+              max="16384"
               step="128"
               value={params.maxTokens}
               onChange={(e) => setParams({ ...params, maxTokens: parseInt(e.target.value, 10) })}

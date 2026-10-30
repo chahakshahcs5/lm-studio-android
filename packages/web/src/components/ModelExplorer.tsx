@@ -33,7 +33,20 @@ import {
   LocalModel,
 } from '@lm-studio-android/shared';
 import { ErrorModalData } from './ErrorModal';
-import { CustomSelect } from './ui/CustomSelect';
+import { CustomSelect, SelectOption } from './ui/CustomSelect';
+
+const CONTEXT_WINDOW_OPTIONS: SelectOption<number>[] = [
+  { value: 512, label: '512 tokens', badge: 'Ultra Low' },
+  { value: 1024, label: '1024 tokens', badge: 'Low RAM' },
+  { value: 2048, label: '2048 tokens', badge: 'Balanced' },
+  { value: 4096, label: '4096 tokens', badge: 'High Ctx' },
+  { value: 8192, label: '8192 tokens', badge: '8K Ctx' },
+  { value: 16384, label: '16384 tokens', badge: '16K Ctx' },
+  { value: 32768, label: '32768 tokens', badge: '32K Ctx' },
+  { value: 65536, label: '65536 tokens', badge: '64K Ctx' },
+  { value: 131072, label: '131072 tokens', badge: '128K Full' },
+  { value: 0, label: 'Custom tokens...', badge: 'Manual' },
+];
 
 interface ModelExplorerProps {
   engineStatus: EngineStatus | null;
@@ -100,6 +113,7 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   const [threads, setThreads] = useState<number>(telemetry?.cpu.recommendedThreads || 4);
   const [hasUserModifiedThreads, setHasUserModifiedThreads] = useState<boolean>(false);
   const [ctxSize, setCtxSize] = useState<number>(2048);
+  const [isCustomCtx, setIsCustomCtx] = useState<boolean>(false);
   const [flashAttn, setFlashAttn] = useState<boolean>(true);
   const [kvQuant, setKvQuant] = useState<'f16' | 'q8_0' | 'q4_0'>('f16');
   const [gpuLayers, setGpuLayers] = useState<number>(0);
@@ -1240,7 +1254,10 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
                           </button>
                         ) : (
                           <button
-                            onClick={() => setSelectedModelForConfig(m)}
+                            onClick={() => {
+                              setSelectedModelForConfig(m);
+                              setIsCustomCtx(false);
+                            }}
                             disabled={loadingModelId !== null}
                             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-accent text-white hover:opacity-90 transition-all active:scale-95 disabled:opacity-40 shadow-accent-glow"
                           >
@@ -1531,10 +1548,12 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
             onClick={() => setSelectedModelForConfig(null)}
           >
             <div
-              className="bg-studio-surface border border-studio-border rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative overflow-hidden"
+              className="bg-studio-surface border border-studio-border rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="absolute -top-12 -right-12 w-32 h-32 bg-accent/15 rounded-full blur-2xl pointer-events-none" />
+              <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+                <div className="absolute -top-12 -right-12 w-32 h-32 bg-accent/15 rounded-full blur-2xl" />
+              </div>
 
               <div className="flex items-center justify-between pb-3 border-b border-studio-border">
                 <div>
@@ -1574,18 +1593,67 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
 
                 {/* Context Window */}
                 <div className="flex items-center justify-between">
-                  <span className="text-studio-text">Context Window</span>
-                  <CustomSelect
-                    value={ctxSize}
-                    onChange={(val) => setCtxSize(Number(val))}
-                    options={[
-                      { value: 1024, label: '1024 tokens', badge: 'Low RAM' },
-                      { value: 2048, label: '2048 tokens', badge: 'Balanced' },
-                      { value: 4096, label: '4096 tokens', badge: 'High Ctx' },
-                      { value: 8192, label: '8192 tokens', badge: 'Max Ctx' },
-                    ]}
-                    size="sm"
-                  />
+                  <div className="flex flex-col">
+                    <span className="text-studio-text">Context Window</span>
+                    <span className="text-[10px] text-studio-textMuted">KV buffer allocation</span>
+                  </div>
+                  {isCustomCtx ? (
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="256"
+                          max="262144"
+                          step="256"
+                          value={ctxSize}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            setCtxSize(isNaN(val) ? 2048 : Math.max(256, Math.min(262144, val)));
+                          }}
+                          className="w-24 bg-studio-card border border-studio-border rounded-xl px-2.5 py-1 text-right font-mono text-accent text-xs focus:outline-none focus:border-accent"
+                          placeholder="Tokens"
+                          autoFocus
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomCtx(false)}
+                        className="px-2 py-1 rounded-lg text-[11px] font-mono text-studio-textMuted hover:text-accent hover:bg-studio-card transition-colors"
+                        title="Switch to presets dropdown"
+                      >
+                        Presets
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <CustomSelect
+                        value={CONTEXT_WINDOW_OPTIONS.some((o) => o.value === ctxSize && o.value !== 0) ? ctxSize : 0}
+                        onChange={(val) => {
+                          const num = Number(val);
+                          if (num === 0) {
+                            setIsCustomCtx(true);
+                          } else {
+                            setCtxSize(num);
+                          }
+                        }}
+                        options={
+                          !CONTEXT_WINDOW_OPTIONS.some((o) => o.value === ctxSize)
+                            ? [{ value: ctxSize, label: `${ctxSize} tokens`, badge: 'Custom' }, ...CONTEXT_WINDOW_OPTIONS]
+                            : CONTEXT_WINDOW_OPTIONS
+                        }
+                        menuClassName="right-0 left-auto"
+                        size="sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomCtx(true)}
+                        className="p-1.5 rounded-lg text-studio-textMuted hover:text-accent hover:bg-studio-card transition-colors"
+                        title="Type custom token count"
+                      >
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Flash-Attention */}
