@@ -5,6 +5,7 @@ import http from 'http';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { apiRouter } from './routes/api.js';
@@ -12,6 +13,25 @@ import { hardwareMonitor } from './hardware/telemetry.js';
 import { llamaEngine } from './engine/llama.js';
 import { modelManager } from './hf/models.js';
 import { getLocalIp } from './utils/network.js';
+
+// Auto-acquire wake lock on Android Termux so OS never suspends CPU when screen is off
+if (fs.existsSync('/data/data/com.termux')) {
+  try {
+    execFileSync('termux-wake-lock', [], { timeout: 1000, stdio: 'ignore' });
+    console.log('[Server] ✓ CPU wake-lock active (prevents Android sleep throttling)');
+  } catch {
+    // ignore
+  }
+}
+
+// Ensure stdin never blocks the event loop waiting for user Enter key in terminal
+if (process.stdin && typeof process.stdin.unref === 'function') {
+  try {
+    process.stdin.unref();
+  } catch {
+    // ignore
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

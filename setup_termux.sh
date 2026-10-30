@@ -58,6 +58,13 @@ if command -v termux-wake-lock >/dev/null 2>&1; then
     termux-wake-lock 2>/dev/null || true
 fi
 
+# Ensure Termux soft keyboard never delays/buffers terminal events
+mkdir -p "$HOME/.termux"
+if [ ! -f "$HOME/.termux/termux.properties" ] || ! grep -q "enforce-char-based-input" "$HOME/.termux/termux.properties" 2>/dev/null; then
+    echo "enforce-char-based-input = true" >> "$HOME/.termux/termux.properties"
+    termux-reload-settings 2>/dev/null || true
+fi
+
 if [ ! -d "$HOME/storage" ]; then
     echo -e "${BLUE}[*] Requesting phone storage access (/sdcard)...${NC}"
     termux-setup-storage 2>/dev/null || true
