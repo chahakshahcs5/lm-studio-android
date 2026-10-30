@@ -13,6 +13,7 @@ export class LlamaEngine {
   private port: number = 50053;
   private isMockMode: boolean = false;
   private tokensGeneratedTotal: number = 0;
+  private lastRunTps: number = 0;
   private logPath: string;
   private featuresCache: Map<
     string,
@@ -148,6 +149,7 @@ export class LlamaEngine {
       pid: this.process?.pid || null,
       port: this.port,
       tokensGeneratedTotal: this.tokensGeneratedTotal,
+      lastRunTps: this.lastRunTps,
     };
   }
 
@@ -284,6 +286,16 @@ export class LlamaEngine {
 
   public incrementTokens(count: number): void {
     this.tokensGeneratedTotal += count;
+  }
+
+  public setLastRunTps(tps: number): void {
+    if (tps > 0) {
+      this.lastRunTps = Math.round(tps * 10) / 10;
+    }
+  }
+
+  public getPid(): number | null {
+    return this.process?.pid || null;
   }
 
   private pollHealth(maxSeconds: number): Promise<boolean> {

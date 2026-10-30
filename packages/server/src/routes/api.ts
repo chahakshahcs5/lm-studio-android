@@ -95,6 +95,15 @@ apiRouter.post('/api/unload', async (req: Request, res: Response) => {
   res.json({ success: true, message: 'RAM freed and llama-server unloaded' });
 });
 
+// Update TPS metric
+apiRouter.post('/api/metrics/tps', (req: Request, res: Response) => {
+  const { tps } = req.body;
+  if (typeof tps === 'number' && tps > 0) {
+    llamaEngine.setLastRunTps(tps);
+  }
+  res.json({ success: true, lastRunTps: llamaEngine.getStatus().lastRunTps });
+});
+
 // Model Download
 apiRouter.post('/api/download', (req: Request, res: Response) => {
   try {
@@ -253,9 +262,50 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
       if (isStream) {
         res.setHeader('Cache-Control', 'no-cache');
         res.setHeader('X-Accel-Buffering', 'no');
-      }
 
-      proxyRes.pipe(res);
+        let streamBuffer = '';
+        proxyRes.on('data', (chunk: Buffer) => {
+          res.write(chunk);
+          streamBuffer += chunk.toString('utf8');
+          const lines = streamBuffer.split('\n');
+          streamBuffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith('data: ') && trimmed !== 'data: [DONE]') {
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                const content = parsed.choices?.[0]?.delta?.content;
+                if (content) {
+                  llamaEngine.incrementTokens(1);
+                }
+              } catch {
+                // ignore
+              }
+            }
+          }
+        });
+
+        proxyRes.on('end', () => {
+          res.end();
+        });
+      } else {
+        let fullBody = '';
+        proxyRes.on('data', (chunk: Buffer) => {
+          fullBody += chunk.toString('utf8');
+        });
+        proxyRes.on('end', () => {
+          try {
+            const parsed = JSON.parse(fullBody);
+            if (parsed.usage?.completion_tokens) {
+              llamaEngine.incrementTokens(parsed.usage.completion_tokens);
+            }
+          } catch {
+            // ignore
+          }
+          res.send(fullBody);
+        });
+      }
     }
   );
 

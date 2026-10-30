@@ -8,6 +8,8 @@ export interface BatteryTelemetry {
   isCharging: boolean | null;
   health?: string;
   voltage?: number; // mV
+  source?: 'sysfs' | 'termux-api' | 'thermal_zone' | 'estimated';
+  sensorLabel?: string;
 }
 
 export interface CpuTopology {
@@ -17,7 +19,10 @@ export interface CpuTopology {
   recommendedThreads: number;
   affinityMask?: string;
   socModel?: string;
+  deviceModel?: string;
   architecture?: string;
+  overallCpuUsage?: number; // 0 - 100%
+  coreUsages?: number[]; // [12, 45, 80, ...]
 }
 
 export interface RamTelemetry {
@@ -95,6 +100,7 @@ export interface EngineStatus {
   port: number;
   tokensGeneratedTotal?: number;
   averageTps?: number;
+  lastRunTps?: number;
   lastError?: string | null;
 }
 

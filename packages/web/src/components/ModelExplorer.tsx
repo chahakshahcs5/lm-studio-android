@@ -21,6 +21,7 @@ import {
   LocalModel,
 } from '@lm-studio-android/shared';
 import { ErrorModalData } from './ErrorModal';
+import { CustomSelect } from './ui/CustomSelect';
 
 interface ModelExplorerProps {
   engineStatus: EngineStatus | null;
@@ -362,16 +363,17 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
                 {/* Context Size */}
                 <div className="flex items-center justify-between">
                   <span className="text-studio-text">Context Window</span>
-                  <select
+                  <CustomSelect
                     value={ctxSize}
-                    onChange={(e) => setCtxSize(parseInt(e.target.value, 10))}
-                    className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
-                  >
-                    <option value={1024}>1024 tokens</option>
-                    <option value={2048}>2048 tokens</option>
-                    <option value={4096}>4096 tokens</option>
-                    <option value={8192}>8192 tokens</option>
-                  </select>
+                    onChange={(val) => setCtxSize(Number(val))}
+                    options={[
+                      { value: 1024, label: '1024 tokens', badge: 'Low RAM' },
+                      { value: 2048, label: '2048 tokens', badge: 'Balanced' },
+                      { value: 4096, label: '4096 tokens', badge: 'High Ctx' },
+                      { value: 8192, label: '8192 tokens', badge: 'Max Ctx' },
+                    ]}
+                    size="sm"
+                  />
                 </div>
 
                 {/* Flash-Attention */}
@@ -388,15 +390,16 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
                 {/* KV Quant */}
                 <div className="flex items-center justify-between">
                   <span className="text-studio-text">KV Cache Quantization</span>
-                  <select
+                  <CustomSelect
                     value={kvQuant}
-                    onChange={(e) => setKvQuant(e.target.value as any)}
-                    className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
-                  >
-                    <option value="f16">f16 (standard)</option>
-                    <option value="q8_0">q8_0 (50% bandwidth reduction)</option>
-                    <option value="q4_0">q4_0 (75% bandwidth reduction)</option>
-                  </select>
+                    onChange={(val) => setKvQuant(val as any)}
+                    options={[
+                      { value: 'f16', label: 'f16', badge: 'Standard' },
+                      { value: 'q8_0', label: 'q8_0', badge: '-50% RAM' },
+                      { value: 'q4_0', label: 'q4_0', badge: '-75% RAM' },
+                    ]}
+                    size="sm"
+                  />
                 </div>
 
                 {/* GPU Layers */}

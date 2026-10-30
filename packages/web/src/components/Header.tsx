@@ -14,6 +14,7 @@ import {
   Copy,
   Check,
   Palette,
+  Activity,
 } from 'lucide-react';
 import { EngineStatus, HardwareTelemetry } from '@lm-studio-android/shared';
 
@@ -29,6 +30,8 @@ interface HeaderProps {
   onToggleMode: () => void;
   onOpenThemeModal: () => void;
   serverIp?: string;
+  onToggleMobileTelemetry?: () => void;
+  isMobileTelemetryOpen?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -43,6 +46,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMode,
   onOpenThemeModal,
   serverIp,
+  onToggleMobileTelemetry,
+  isMobileTelemetryOpen = false,
 }) => {
   const [copiedIp, setCopiedIp] = useState(false);
 
@@ -115,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
       </div>
 
-      {/* Model State Pill in Center */}
+      {/* Model State Pill in Center (Desktop) */}
       <div className="hidden lg:flex items-center gap-3">
         <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-studio-card border border-studio-border shadow-studio-subtle">
           <Database className="w-4 h-4 text-accent" />
@@ -144,8 +149,46 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Right Controls: Tabs + Theme Switcher */}
-      <div className="flex items-center gap-3">
+      {/* Right Controls: Mobile Drawer Toggle + Tabs + Theme Switcher */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Mobile Mounted Pill */}
+        {isLoaded && (
+          <div className="flex lg:hidden items-center gap-1.5 px-2 py-1 rounded-lg bg-studio-card border border-studio-border text-xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+            <span className="font-mono text-[10px] text-accent font-semibold truncate max-w-[80px] sm:max-w-[120px]">
+              {currentModel?.name}
+            </span>
+            <button
+              onClick={onUnloadModel}
+              disabled={isLoading}
+              className="p-0.5 rounded text-crimson-accent hover:bg-crimson-muted transition-colors"
+              title="Free RAM"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        )}
+
+        {/* Mobile Hardware Inspector Button */}
+        {onToggleMobileTelemetry && (
+          <button
+            onClick={onToggleMobileTelemetry}
+            className={`lg:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all border ${
+              isMobileTelemetryOpen
+                ? 'bg-accent text-white border-accent shadow-accent-glow'
+                : 'bg-studio-card border-studio-border text-studio-text hover:border-accent'
+            }`}
+            title="Toggle Hardware Inspector"
+          >
+            <Activity className="w-3.5 h-3.5 text-accent" />
+            <span className="hidden sm:inline text-xs font-sans">HUD</span>
+            {telemetry?.cpu.overallCpuUsage !== undefined && (
+              <span className="text-[10px] font-bold">
+                {telemetry.cpu.overallCpuUsage}%
+              </span>
+            )}
+          </button>
+        )}
         {/* Navigation Tabs */}
         <nav className="flex items-center p-1 rounded-lg bg-studio-card border border-studio-border">
           <button

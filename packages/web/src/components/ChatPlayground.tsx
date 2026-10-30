@@ -21,6 +21,7 @@ import {
   InferenceParams,
   SystemPromptPreset,
 } from '@lm-studio-android/shared';
+import { CustomSelect } from './ui/CustomSelect';
 
 const PRESET_SYSTEM_PROMPTS: SystemPromptPreset[] = [
   {
@@ -51,7 +52,7 @@ const PRESET_SYSTEM_PROMPTS: SystemPromptPreset[] = [
 
 interface ChatPlaygroundProps {
   engineStatus: EngineStatus | null;
-  onTpsUpdate?: (tps: number) => void;
+  onTpsUpdate?: (liveTps: number, lastTps?: number) => void;
   onNavigateToModels?: () => void;
   onError?: (data: any) => void;
 }
@@ -241,7 +242,16 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
       setMessages((prev) =>
         prev.map((m) => (m.id === assistantMsgId ? { ...m, metrics } : m))
       );
-      if (onTpsUpdate) onTpsUpdate(0);
+
+      if (finalTps > 0) {
+        fetch('/api/metrics/tps', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tps: finalTps }),
+        }).catch(() => {});
+      }
+
+      if (onTpsUpdate) onTpsUpdate(0, finalTps);
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setMessages((prev) =>
@@ -284,28 +294,29 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full bg-studio-bg overflow-hidden relative transition-colors">
         {/* Top Control Bar */}
-        <div className="h-12 border-b border-studio-border px-5 flex items-center justify-between bg-studio-surface/80 backdrop-blur-sm z-10 flex-shrink-0">
-          {/* Preset Selector */}
+        <div className="min-h-12 border-b border-studio-border px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2.5 bg-studio-surface/80 backdrop-blur-sm z-10 flex-shrink-0">
+          {/* Preset Selector with Modern CustomSelect */}
           <div className="flex items-center gap-2 text-xs">
-            <BookOpen className="w-3.5 h-3.5 text-studio-textMuted" />
-            <span className="text-studio-textMuted">Persona:</span>
-            <select
+            <span className="text-studio-textMuted font-medium flex items-center gap-1.5">
+              <BookOpen className="w-3.5 h-3.5 text-accent" />
+              <span>Persona:</span>
+            </span>
+            <CustomSelect
               value={selectedPreset}
-              onChange={(e) => {
-                const p = PRESET_SYSTEM_PROMPTS.find((x) => x.id === e.target.value);
+              onChange={(val) => {
+                const p = PRESET_SYSTEM_PROMPTS.find((x) => x.id === val);
                 if (p) {
                   setSelectedPreset(p.id);
                   setCustomSystemPrompt(p.content);
                 }
               }}
-              className="bg-studio-card border border-studio-border rounded px-2.5 py-1 text-studio-text text-xs font-medium focus:outline-none focus:border-accent"
-            >
-              {PRESET_SYSTEM_PROMPTS.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              options={PRESET_SYSTEM_PROMPTS.map((p) => ({
+                value: p.id,
+                label: p.name,
+                description: p.description,
+              }))}
+              size="sm"
+            />
           </div>
 
           {/* Action buttons */}
