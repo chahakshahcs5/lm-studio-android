@@ -7,6 +7,7 @@ import { hardwareMonitor } from '../hardware/telemetry.js';
 import { llamaEngine } from '../engine/llama.js';
 import { modelManager, CURATED_MODELS } from '../hf/models.js';
 import { getLocalIp } from '../utils/network.js';
+import { fileDb } from '../db/fileDb.js';
 
 export const apiRouter = Router();
 
@@ -332,4 +333,161 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
 
   proxyReq.write(JSON.stringify(req.body));
   proxyReq.end();
+});
+
+// ============================================================================
+// Local File DB - Conversations API
+// ============================================================================
+
+// List conversations
+apiRouter.get('/api/conversations', (req: Request, res: Response) => {
+  const query = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const list = fileDb.listConversations(query);
+  res.json({ success: true, data: list });
+});
+
+// Export all conversations backup
+apiRouter.get('/api/conversations/export/all', (req: Request, res: Response) => {
+  const all = fileDb.exportAllConversations();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename="lm-studio-conversations-backup-${Date.now()}.json"`
+  );
+  res.json(all);
+});
+
+// Import conversations backup
+apiRouter.post('/api/conversations/import', (req: Request, res: Response) => {
+  const items = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: 'Body must be an array of conversations' });
+  }
+  const result = fileDb.importConversations(items);
+  res.json({ success: true, ...result });
+});
+
+// Clear all conversations
+apiRouter.delete('/api/conversations', (req: Request, res: Response) => {
+  const success = fileDb.clearAllConversations();
+  res.json({ success });
+});
+
+// Create conversation
+apiRouter.post('/api/conversations', (req: Request, res: Response) => {
+  try {
+    const conv = fileDb.createConversation(req.body);
+    res.json({ success: true, data: conv });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get single conversation
+apiRouter.get('/api/conversations/:id', (req: Request, res: Response) => {
+  const conv = fileDb.getConversation(req.params.id);
+  if (!conv) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  res.json({ success: true, data: conv });
+});
+
+// Update conversation (title, messages, persona, params, pinned)
+apiRouter.put('/api/conversations/:id', (req: Request, res: Response) => {
+  const updated = fileDb.updateConversation(req.params.id, req.body);
+  if (!updated) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+  res.json({ success: true, data: updated });
+});
+
+// Delete single conversation
+apiRouter.delete('/api/conversations/:id', (req: Request, res: Response) => {
+  const success = fileDb.deleteConversation(req.params.id);
+  res.json({ success });
+});
+
+// Export single conversation as Markdown or JSON
+apiRouter.get('/api/conversations/:id/export', (req: Request, res: Response) => {
+  const format = req.query.format === 'json' ? 'json' : 'md';
+  const conv = fileDb.getConversation(req.params.id);
+  if (!conv) {
+    return res.status(404).json({ error: 'Conversation not found' });
+  }
+
+  const safeTitle = (conv.title || 'conversation')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .slice(0, 30);
+
+  if (format === 'json') {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.json"`);
+    return res.json(conv);
+  }
+
+  const md = fileDb.exportConversationMarkdown(req.params.id);
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.md"`);
+  res.send(md);
+});
+
+// ============================================================================
+// Custom Personas / System Prompts API
+// ============================================================================
+
+apiRouter.get('/api/personas', (req: Request, res: Response) => {
+  const personas = fileDb.listPersonas();
+  res.json({ success: true, data: personas });
+});
+
+apiRouter.post('/api/personas', (req: Request, res: Response) => {
+  try {
+    const { name, description, content, id } = req.body;
+    if (!name || !content) {
+      return res.status(400).json({ error: 'Name and content are required' });
+    }
+    const saved = fileDb.savePersona({ id, name, description: description || '', content });
+    res.json({ success: true, data: saved });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.delete('/api/personas/:id', (req: Request, res: Response) => {
+  const success = fileDb.deletePersona(req.params.id);
+  if (!success) {
+    return res.status(400).json({ error: 'Cannot delete built-in persona or persona not found' });
+  }
+  res.json({ success: true });
+});
+
+// ============================================================================
+// Parameter Presets API
+// ============================================================================
+
+apiRouter.get('/api/presets/params', (req: Request, res: Response) => {
+  const presets = fileDb.listPresets();
+  res.json({ success: true, data: presets });
+});
+
+apiRouter.post('/api/presets/params', (req: Request, res: Response) => {
+  try {
+    const { name, description, params, id } = req.body;
+    if (!name || !params) {
+      return res.status(400).json({ error: 'Name and params are required' });
+    }
+    const saved = fileDb.savePreset({ id, name, description: description || '', params });
+    res.json({ success: true, data: saved });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+apiRouter.delete('/api/presets/params/:id', (req: Request, res: Response) => {
+  const success = fileDb.deletePreset(req.params.id);
+  if (!success) {
+    return res.status(400).json({ error: 'Cannot delete built-in preset or preset not found' });
+  }
+  res.json({ success: true });
 });

@@ -21,6 +21,7 @@ yarn-error.log*
 *.bin
 models/
 ~/models/
+data/
 
 # System / OS
 .DS_Store

@@ -47,6 +47,9 @@ Your browser will automatically open to `http://localhost:8080`.
 
 * **Modular TypeScript Monorepo Architecture**: Clean separation between `@lm-studio-android/shared`, `@lm-studio-android/server`, and `@lm-studio-android/web`.
 * **Sub-35MB RAM Footprint**: The modern React interface compiles directly into static assets served with zero overhead by the lightweight Node daemon, saving precious RAM for model weights.
+* **Zero-Dependency Local File DB**: High-performance, crash-resilient atomic JSON database preserving full conversation history, token metrics, custom personas, and parameter profiles without native SQLite compilation bloat.
+* **Session Management & Export**: Multi-thread conversation drawer with live search, message branching/regeneration, and 1-click Markdown (`.md`) or JSON backup/export.
+* **Custom System Personas**: Create and persist custom prompt roles and system instructions directly on-device.
 * **Studio Obsidian Design System**: Custom handcrafted UI inspired by LM Studio, Linear, and Raycast. No generic AI templates or bloated libraries.
 * **Live WebSocket Telemetry**: Sub-second, real-time broadcast of battery percentage, thermal degrees, big.LITTLE core pinning, unified RAM allocation, and token generation speed.
 * **Curated Hugging Face Catalog**: RAM compatibility calculator automatically validates whether a model safely fits within your device's memory before downloading.

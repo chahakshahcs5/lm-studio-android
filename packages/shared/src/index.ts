@@ -138,14 +138,65 @@ export interface InferenceParams {
   stream: boolean;
 }
 
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messageCount: number;
+  preview?: string;
+  modelId?: string;
+  isPinned?: boolean;
+}
+
 export interface Conversation {
   id: string;
   title: string;
   createdAt: number;
   updatedAt: number;
   systemPrompt?: string;
+  systemPromptId?: string;
   messages: ChatMessage[];
   modelId?: string;
+  params?: InferenceParams;
+  isPinned?: boolean;
+}
+
+export interface CreateConversationDTO {
+  title?: string;
+  systemPrompt?: string;
+  systemPromptId?: string;
+  modelId?: string;
+  params?: InferenceParams;
+  messages?: ChatMessage[];
+  isPinned?: boolean;
+}
+
+export interface UpdateConversationDTO {
+  title?: string;
+  systemPrompt?: string;
+  systemPromptId?: string;
+  modelId?: string;
+  params?: InferenceParams;
+  messages?: ChatMessage[];
+  isPinned?: boolean;
+}
+
+export interface CustomPersona {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  isBuiltin?: boolean;
+  createdAt?: number;
+}
+
+export interface InferencePreset {
+  id: string;
+  name: string;
+  description: string;
+  params: InferenceParams;
+  isBuiltin?: boolean;
 }
 
 // System Prompt Presets
@@ -155,6 +206,7 @@ export interface SystemPromptPreset {
   description: string;
   content: string;
   icon?: string;
+  isBuiltin?: boolean;
 }
 
 // Server-to-Client WebSocket Messages
