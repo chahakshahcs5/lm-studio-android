@@ -208,27 +208,117 @@ apiRouter.get('/api/hf/model', async (req: Request, res: Response) => {
   }
 });
 
-// OpenAI Compatible Models Endpoint
-apiRouter.get('/v1/models', (req: Request, res: Response) => {
+// ============================================================================
+// OpenAI Compatible API Suite (/v1)
+// ============================================================================
+
+// Explicit CORS preflight for all /v1 endpoints
+apiRouter.options('/v1/*', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.sendStatus(204);
+});
+
+// OpenAI Base URL Service Discovery & Health Probe
+apiRouter.get(['/v1', '/v1/'], (req: Request, res: Response) => {
   const status = llamaEngine.getStatus();
-  const currentModel = status.currentModel?.name;
+  const localModels = modelManager.scanLocalModels();
+  const host = req.headers.host || '127.0.0.1:8080';
   res.json({
-    object: 'list',
-    data: status.loaded && currentModel
-      ? [
-          {
-            id: currentModel,
-            object: 'model',
-            created: Math.floor(Date.now() / 1000),
-            owned_by: 'lm-studio-android',
-          },
-        ]
-      : [],
+    status: 'online',
+    service: 'LM Studio Android OpenAI-Compatible Inference Server',
+    version: '1.0.0',
+    model_loaded: status.loaded,
+    active_model: status.currentModel?.name || null,
+    available_models: localModels.map((m) => m.name),
+    endpoints: {
+      models: `http://${host}/v1/models`,
+      chat_completions: `http://${host}/v1/chat/completions`,
+      completions: `http://${host}/v1/completions`,
+      embeddings: `http://${host}/v1/embeddings`,
+    },
+    sample_usage: {
+      curl: `curl http://${host}/v1/chat/completions -H "Content-Type: application/json" -d '{"model": "${status.currentModel?.name || (localModels[0]?.name || 'default')}", "messages": [{"role": "user", "content": "Hello!"}]}'`,
+      python: `from openai import OpenAI\nclient = OpenAI(base_url="http://${host}/v1", api_key="not-needed")\nresp = client.chat.completions.create(model="${status.currentModel?.name || (localModels[0]?.name || 'default')}", messages=[{"role": "user", "content": "Hello!"}])`,
+    },
   });
 });
 
-// OpenAI Compatible Chat Completions Proxy
-apiRouter.post(['/v1/chat/completions', '/v1/completions'], async (req: Request, res: Response) => {
+// OpenAI Compatible Models Endpoint
+apiRouter.get(['/v1/models', '/v1/models/'], (req: Request, res: Response) => {
+  const status = llamaEngine.getStatus();
+  const localModels = modelManager.scanLocalModels();
+
+  const modelList: Array<{
+    id: string;
+    object: string;
+    created: number;
+    owned_by: string;
+    active?: boolean;
+    size?: string;
+  }> = [];
+
+  // Active loaded model always at top
+  if (status.loaded && status.currentModel) {
+    modelList.push({
+      id: status.currentModel.name,
+      object: 'model',
+      created: Math.floor((status.currentModel.lastModified || Date.now()) / 1000),
+      owned_by: 'lm-studio-android',
+      active: true,
+      size: status.currentModel.sizeFormatted,
+    });
+  }
+
+  // Include all other available local models
+  for (const m of localModels) {
+    if (!modelList.some((existing) => existing.id === m.name)) {
+      modelList.push({
+        id: m.name,
+        object: 'model',
+        created: Math.floor((m.lastModified || Date.now()) / 1000),
+        owned_by: 'lm-studio-android',
+        active: false,
+        size: m.sizeFormatted,
+      });
+    }
+  }
+
+  // Fallback descriptor if no models are installed yet
+  if (modelList.length === 0) {
+    modelList.push({
+      id: 'default',
+      object: 'model',
+      created: Math.floor(Date.now() / 1000),
+      owned_by: 'lm-studio-android',
+    });
+  }
+
+  res.json({
+    object: 'list',
+    data: modelList,
+  });
+});
+
+// Single model retrieval
+apiRouter.get('/v1/models/:modelId', (req: Request, res: Response) => {
+  const { modelId } = req.params;
+  const status = llamaEngine.getStatus();
+  const localModels = modelManager.scanLocalModels();
+  const match = localModels.find((m) => m.name === modelId || m.id === modelId || m.path.includes(modelId));
+
+  res.json({
+    id: match ? match.name : modelId,
+    object: 'model',
+    created: Math.floor(Date.now() / 1000),
+    owned_by: 'lm-studio-android',
+    active: status.loaded && status.currentModel?.name === (match ? match.name : modelId),
+  });
+});
+
+// OpenAI Compatible Embeddings Endpoint
+apiRouter.post('/v1/embeddings', async (req: Request, res: Response) => {
   const status = llamaEngine.getStatus();
   if (!status.loaded) {
     return res.status(400).json({
@@ -237,6 +327,92 @@ apiRouter.post(['/v1/chat/completions', '/v1/completions'], async (req: Request,
         type: 'invalid_request_error',
       },
     });
+  }
+
+  if (llamaEngine.getIsMock()) {
+    const input = Array.isArray(req.body.input) ? req.body.input : [req.body.input || ''];
+    return res.json({
+      object: 'list',
+      data: input.map((_: any, idx: number) => ({
+        object: 'embedding',
+        index: idx,
+        embedding: Array.from({ length: 64 }, () => Math.random() * 2 - 1),
+      })),
+      model: status.currentModel?.name || 'mock-embedding',
+      usage: { prompt_tokens: 16, total_tokens: 16 },
+    });
+  }
+
+  const targetUrl = new URL(llamaEngine.getLlamaUrl() + '/v1/embeddings');
+  const proxyReq = http.request(
+    targetUrl,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    (proxyRes) => {
+      res.status(proxyRes.statusCode || 200);
+      proxyRes.pipe(res);
+    }
+  );
+  proxyReq.on('error', (err) => {
+    res.status(502).json({
+      error: { message: `Embedding error: ${err.message}`, type: 'bad_gateway' },
+    });
+  });
+  proxyReq.write(JSON.stringify(req.body));
+  proxyReq.end();
+});
+
+// OpenAI Compatible Chat Completions Proxy
+apiRouter.post(['/v1/chat/completions', '/v1/completions'], async (req: Request, res: Response) => {
+  let status = llamaEngine.getStatus();
+
+  // If engine is not running, attempt on-demand auto-mount of the requested model or first local model
+  if (!status.loaded) {
+    const localModels = modelManager.scanLocalModels();
+    const requestedModelName = req.body?.model;
+    const targetModel =
+      (requestedModelName &&
+        localModels.find(
+          (m) =>
+            m.name === requestedModelName ||
+            m.id === requestedModelName ||
+            m.path.includes(requestedModelName)
+        )) ||
+      localModels[0];
+
+    if (targetModel) {
+      console.log(`[API] Auto-mounting model '${targetModel.name}' on-demand for incoming OpenAI API request...`);
+      try {
+        const cpuTopo = hardwareMonitor.detectCpuTopology();
+        const threads = cpuTopo.recommendedThreads || 4;
+        status = await llamaEngine.start(targetModel, {
+          threads,
+          ctxSize: 2048,
+          flashAttn: true,
+          kvQuant: 'f16',
+          gpuLayers: 0,
+          pinCores: true,
+        });
+      } catch (loadErr: any) {
+        return res.status(500).json({
+          error: {
+            message: `Failed to auto-mount requested model '${targetModel.name}': ${loadErr.message}`,
+            type: 'internal_error',
+            code: 'auto_mount_failed',
+          },
+        });
+      }
+    } else {
+      return res.status(400).json({
+        error: {
+          message: 'No model loaded and no local .gguf models found on device storage. Please download a model from the Models pane.',
+          type: 'invalid_request_error',
+          code: 'no_models_available',
+        },
+      });
+    }
   }
 
   const isStream = req.body.stream === true;
