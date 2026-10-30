@@ -88,6 +88,7 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   const [presets, setPresets] = useState<HfModelPreset[]>([]);
   const [isLoadingLocal, setIsLoadingLocal] = useState<boolean>(false);
   const [localSearchQuery, setLocalSearchQuery] = useState<string>('');
+  const [curatedSearchQuery, setCuratedSearchQuery] = useState<string>('');
   const [filterTier, setFilterTier] = useState<number | 'all'>('all');
 
   // Delete Confirmation State
@@ -445,14 +446,16 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   // Filtered Curated Presets
   const filteredPresets = useMemo(() => {
     return presets.filter((p) => {
+      const q = curatedSearchQuery.toLowerCase().trim();
       const matchQuery =
-        p.name.toLowerCase().includes(hubSearchQuery.toLowerCase()) ||
-        p.description.toLowerCase().includes(hubSearchQuery.toLowerCase()) ||
-        p.quantization.toLowerCase().includes(hubSearchQuery.toLowerCase());
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        p.description.toLowerCase().includes(q) ||
+        p.quantization.toLowerCase().includes(q);
       const matchTier = filterTier === 'all' || p.tier === filterTier;
       return matchQuery && matchTier;
     });
-  }, [presets, hubSearchQuery, filterTier]);
+  }, [presets, curatedSearchQuery, filterTier]);
 
   // Filtered Local Models
   const filteredLocalModels = useMemo(() => {
@@ -933,7 +936,7 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
       {/* ===================================================================== */}
       {activeTab === 'curated' && (
         <div className="space-y-6 animate-in fade-in duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-studio-surface border border-studio-border shadow-studio-subtle">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-2xl bg-studio-surface border border-studio-border shadow-studio-subtle">
             <div>
               <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-studio-text flex items-center gap-2">
                 <Zap className="w-4 h-4 text-accent" />
@@ -944,129 +947,175 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
               </p>
             </div>
 
-            {/* RAM Tier Filters */}
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-studio-card border border-studio-border text-xs">
-              <button
-                onClick={() => setFilterTier('all')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                  filterTier === 'all'
-                    ? 'bg-studio-surface text-accent shadow-sm'
-                    : 'text-studio-textMuted hover:text-studio-text'
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setFilterTier(1)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                  filterTier === 1
-                    ? 'bg-studio-surface text-accent shadow-sm'
-                    : 'text-studio-textMuted hover:text-studio-text'
-                }`}
-              >
-                3-4GB RAM
-              </button>
-              <button
-                onClick={() => setFilterTier(2)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                  filterTier === 2
-                    ? 'bg-studio-surface text-accent shadow-sm'
-                    : 'text-studio-textMuted hover:text-studio-text'
-                }`}
-              >
-                6GB RAM
-              </button>
-              <button
-                onClick={() => setFilterTier(3)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
-                  filterTier === 3
-                    ? 'bg-studio-surface text-accent shadow-sm'
-                    : 'text-studio-textMuted hover:text-studio-text'
-                }`}
-              >
-                8GB+ RAM
-              </button>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Curated Search Box */}
+              <div className="relative w-full sm:w-48">
+                <Search className="w-3.5 h-3.5 text-studio-textMuted absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Filter curated..."
+                  value={curatedSearchQuery}
+                  onChange={(e) => setCuratedSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-7 py-1.5 rounded-xl bg-studio-card border border-studio-border text-xs text-studio-text placeholder:text-studio-textMuted focus:outline-none focus:border-accent"
+                />
+                {curatedSearchQuery && (
+                  <button
+                    onClick={() => setCuratedSearchQuery('')}
+                    className="absolute right-2 top-2 p-0.5 text-studio-textMuted hover:text-studio-text rounded"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* RAM Tier Filters */}
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-studio-card border border-studio-border text-xs flex-wrap sm:flex-nowrap">
+                <button
+                  onClick={() => setFilterTier('all')}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                    filterTier === 'all'
+                      ? 'bg-studio-surface text-accent shadow-sm font-semibold'
+                      : 'text-studio-textMuted hover:text-studio-text'
+                  }`}
+                >
+                  All ({presets.length})
+                </button>
+                <button
+                  onClick={() => setFilterTier(1)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                    filterTier === 1
+                      ? 'bg-studio-surface text-accent shadow-sm font-semibold'
+                      : 'text-studio-textMuted hover:text-studio-text'
+                  }`}
+                >
+                  3-4GB RAM
+                </button>
+                <button
+                  onClick={() => setFilterTier(2)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                    filterTier === 2
+                      ? 'bg-studio-surface text-accent shadow-sm font-semibold'
+                      : 'text-studio-textMuted hover:text-studio-text'
+                  }`}
+                >
+                  6GB RAM
+                </button>
+                <button
+                  onClick={() => setFilterTier(3)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
+                    filterTier === 3
+                      ? 'bg-studio-surface text-accent shadow-sm font-semibold'
+                      : 'text-studio-textMuted hover:text-studio-text'
+                  }`}
+                >
+                  8GB+ RAM
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Curated Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredPresets.map((p) => {
-              const isInstalled = localModels.some(
-                (m) => m.name.toLowerCase() === p.name.toLowerCase() || m.path.includes(p.filename)
-              );
-              const isRamCompatible = phoneRamGb >= p.minRamGb;
+          {/* Curated Grid or Empty State */}
+          {isLoadingLocal && presets.length === 0 ? (
+            <div className="p-12 rounded-2xl bg-studio-surface border border-studio-border text-center space-y-2">
+              <RotateCw className="w-6 h-6 text-accent animate-spin mx-auto" />
+              <p className="text-xs text-studio-textMuted font-mono">Loading curated smartphone presets...</p>
+            </div>
+          ) : filteredPresets.length === 0 ? (
+            <div className="p-12 rounded-2xl bg-studio-surface border border-studio-border text-center space-y-3">
+              <Zap className="w-8 h-8 text-studio-textMuted mx-auto" />
+              <h4 className="text-sm font-semibold text-studio-text">No Curated Models Match</h4>
+              <p className="text-xs text-studio-textMuted max-w-sm mx-auto">
+                No curated models matched your current tier or search criteria.
+              </p>
+              <button
+                onClick={() => {
+                  setFilterTier('all');
+                  setCuratedSearchQuery('');
+                }}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-accent text-white hover:opacity-90 transition-all shadow-accent-glow"
+              >
+                Reset Filters
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredPresets.map((p) => {
+                const isInstalled = localModels.some(
+                  (m) => m.name.toLowerCase() === p.name.toLowerCase() || m.path.includes(p.filename)
+                );
+                const isRamCompatible = phoneRamGb >= p.minRamGb;
 
-              return (
-                <div
-                  key={p.id}
-                  className="p-5 rounded-2xl bg-studio-surface border border-studio-border hover:border-accent/40 transition-all flex flex-col justify-between gap-4 shadow-studio-subtle"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-bold">
-                          Tier {p.tier}
+                return (
+                  <div
+                    key={p.id}
+                    className="p-5 rounded-2xl bg-studio-surface border border-studio-border hover:border-accent/40 transition-all flex flex-col justify-between gap-4 shadow-studio-subtle"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-accent/10 border border-accent/20 text-accent font-bold">
+                            Tier {p.tier}
+                          </span>
+                          <h4 className="font-mono text-xs font-bold text-studio-text mt-1.5">{p.name}</h4>
+                        </div>
+                        <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-studio-card border border-studio-border text-accent font-semibold flex-shrink-0">
+                          {p.quantization}
                         </span>
-                        <h4 className="font-mono text-xs font-bold text-studio-text mt-1.5">{p.name}</h4>
                       </div>
-                      <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-studio-card border border-studio-border text-accent font-semibold flex-shrink-0">
-                        {p.quantization}
-                      </span>
+
+                      <p className="text-[11px] text-studio-textMuted line-clamp-2 leading-relaxed">
+                        {p.description}
+                      </p>
+
+                      <div className="flex items-center gap-2 text-[11px] font-mono pt-2 border-t border-studio-borderSubtle">
+                        <span className="text-studio-text font-semibold">{p.sizeFormatted}</span>
+                        <span className="text-studio-textMuted">•</span>
+                        <span className="text-studio-textMuted">{p.params}</span>
+                        <span className="text-studio-textMuted">•</span>
+                        <span
+                          className={`text-[10px] font-semibold ${
+                            isRamCompatible ? 'text-emerald-400' : 'text-amber-400'
+                          }`}
+                        >
+                          {isRamCompatible ? '🟢 Fits RAM' : '🟡 High RAM'}
+                        </span>
+                      </div>
                     </div>
 
-                    <p className="text-[11px] text-studio-textMuted line-clamp-2 leading-relaxed">
-                      {p.description}
-                    </p>
-
-                    <div className="flex items-center gap-2 text-[11px] font-mono pt-2 border-t border-studio-borderSubtle">
-                      <span className="text-studio-text font-semibold">{p.sizeFormatted}</span>
-                      <span className="text-studio-textMuted">•</span>
-                      <span className="text-studio-textMuted">{p.params}</span>
-                      <span className="text-studio-textMuted">•</span>
-                      <span
-                        className={`text-[10px] font-semibold ${
-                          isRamCompatible ? 'text-emerald-400' : 'text-amber-400'
-                        }`}
+                    <div className="pt-3 border-t border-studio-borderSubtle flex items-center justify-between">
+                      <a
+                        href={`https://huggingface.co/${p.repo}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-studio-textMuted hover:text-studio-text flex items-center gap-1 transition-colors"
                       >
-                        {isRamCompatible ? '🟢 Fits RAM' : '🟡 High RAM'}
-                      </span>
+                        <span>HF Repo</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+
+                      {isInstalled ? (
+                        <span className="flex items-center gap-1 text-[11px] font-mono text-accent font-semibold">
+                          <Check className="w-3.5 h-3.5" />
+                          Downloaded
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            handleStartDownload(p.downloadUrl, p.filename, p.id)
+                          }
+                          disabled={downloadState?.active}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-studio-card border border-studio-border text-studio-text hover:text-accent hover:border-accent/40 transition-all active:scale-95 disabled:opacity-40 shadow-studio-subtle"
+                        >
+                          <Download className="w-3.5 h-3.5 text-accent" />
+                          <span>Download</span>
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-studio-borderSubtle flex items-center justify-between">
-                    <a
-                      href={`https://huggingface.co/${p.repo}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-[11px] text-studio-textMuted hover:text-studio-text flex items-center gap-1 transition-colors"
-                    >
-                      <span>HF Repo</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-
-                    {isInstalled ? (
-                      <span className="flex items-center gap-1 text-[11px] font-mono text-accent font-semibold">
-                        <Check className="w-3.5 h-3.5" />
-                        Downloaded
-                      </span>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          handleStartDownload(p.downloadUrl, p.filename, p.id)
-                        }
-                        disabled={downloadState?.active}
-                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-studio-card border border-studio-border text-studio-text hover:text-accent hover:border-accent/40 transition-all active:scale-95 disabled:opacity-40 shadow-studio-subtle"
-                      >
-                        <Download className="w-3.5 h-3.5 text-accent" />
-                        <span>Download</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
