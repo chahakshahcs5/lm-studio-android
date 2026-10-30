@@ -14,6 +14,13 @@ MAGENTA='\033[0;35m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Ensure completely unattended, non-interactive execution (never pause for Enter)
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
+export GIT_PAGER=cat
+export PAGER=cat
+export GIT_TERMINAL_PROMPT=0
+
 clear 2>/dev/null || true
 echo -e "${CYAN}======================================================================${NC}"
 echo -e "${GREEN}${BOLD}   ⚡ LM STUDIO ANDROID - SMARTPHONE AI ACCELERATOR HUB SETUP        ${NC}"
@@ -106,8 +113,8 @@ echo -e "${CYAN}================================================================
 # 3. INSTALL NODE.JS & BUILD TOOLS
 # ==============================================================================
 echo -e "${BLUE}[*] Checking runtime dependencies (Node.js, Clang, CMake, Make)...${NC}"
-pkg update -y 2>/dev/null || true
-pkg install -y nodejs clang cmake make git curl libandroid-support 2>/dev/null || true
+pkg update -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" 2>/dev/null || true
+pkg install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" nodejs clang cmake make git curl libandroid-support 2>/dev/null || true
 
 # ==============================================================================
 # 4. PREPARE LLAMA.CPP INFERENCE SERVER
@@ -143,8 +150,8 @@ if [ -z "$SERVER_BIN" ]; then
     echo -e "${CYAN}[*] Setting up llama-server inference engine...${NC}"
 
     # Try 1: Install official Termux package if available
-    pkg install -y tur-repo 2>/dev/null || true
-    pkg install -y llama-cpp 2>/dev/null || pkg install -y llama.cpp 2>/dev/null || true
+    pkg install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" tur-repo 2>/dev/null || true
+    pkg install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" llama-cpp 2>/dev/null || pkg install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" llama.cpp 2>/dev/null || true
     SERVER_BIN=$(find_existing_server || echo "")
 
     # Try 2: Fast CMake compilation
