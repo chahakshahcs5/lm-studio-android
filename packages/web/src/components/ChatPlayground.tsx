@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   Send,
   Square,
@@ -22,6 +22,8 @@ import {
   X,
   Plus,
   Settings2,
+  Database,
+  Info,
 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -39,6 +41,14 @@ import { CustomSelect } from './ui/CustomSelect';
 import { copyToClipboard } from '../utils/clipboard';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { PersonaModal } from './PersonaModal';
+import { ContextTelemetryModal } from './ContextTelemetryModal';
+
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  const chars = text.length;
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round((chars / 3.8 + words * 1.25) / 2));
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -168,6 +178,46 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
     maxTokens: 2048,
     stream: true,
   });
+
+  // Context & KV Cache Telemetry
+  const [isContextModalOpen, setIsContextModalOpen] = useState<boolean>(false);
+  const [selectedMetricsForInspection, setSelectedMetricsForInspection] = useState<GenerationMetrics | null>(null);
+
+  const maxContextWindow = engineStatus?.activeConfig?.ctxSize || 2048;
+
+  const systemPromptTokens = useMemo(() => {
+    return customSystemPrompt ? estimateTokens(customSystemPrompt) + 4 : 0;
+  }, [customSystemPrompt]);
+
+  const historyTokens = useMemo(() => {
+    return messages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 0);
+  }, [messages]);
+
+  const conversationContextTokens = useMemo(() => {
+    const lastAssistantWithMetrics = [...messages]
+      .reverse()
+      .find((m) => m.role === 'assistant' && m.metrics?.totalTokens);
+    if (lastAssistantWithMetrics?.metrics?.totalTokens) {
+      const lastIdx = messages.indexOf(lastAssistantWithMetrics);
+      const subsequent = messages.slice(lastIdx + 1);
+      const subsequentTokens = subsequent.reduce((acc, m) => acc + estimateTokens(m.content) + 4, 0);
+      return lastAssistantWithMetrics.metrics.totalTokens + subsequentTokens;
+    }
+    return systemPromptTokens + historyTokens;
+  }, [messages, systemPromptTokens, historyTokens]);
+
+  const contextUsagePercent = Math.min(
+    100,
+    Math.round((conversationContextTokens / maxContextWindow) * 1000) / 10
+  );
+
+  const inputTokensEstimate = useMemo(() => {
+    return input.trim() ? estimateTokens(input) : 0;
+  }, [input]);
+
+  const latestAssistantMessage = useMemo(() => {
+    return [...messages].reverse().find((m) => m.role === 'assistant' && m.metrics) || null;
+  }, [messages]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -541,6 +591,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
           repeat_penalty: params.repeatPenalty,
           max_tokens: params.maxTokens,
           stream: true,
+          stream_options: { include_usage: true },
         }),
         signal: abortController.signal,
       });
@@ -557,6 +608,12 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
 
       let buffer = '';
       let streamDone = false;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      let totalTokens = 0;
+      let cachedTokens = 0;
+      let promptTps: number | undefined;
+      let evalTps: number | undefined;
 
       while (!streamDone) {
         const { value, done } = await reader.read();
@@ -576,6 +633,26 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
 
           try {
             const parsed = JSON.parse(trimmed.slice(6));
+
+            // Extract OpenAI / llama.cpp standard usage tokens
+            if (parsed.usage) {
+              if (parsed.usage.prompt_tokens) promptTokens = parsed.usage.prompt_tokens;
+              if (parsed.usage.completion_tokens) completionTokens = parsed.usage.completion_tokens;
+              if (parsed.usage.total_tokens) totalTokens = parsed.usage.total_tokens;
+              if (parsed.usage.prompt_tokens_details?.cached_tokens !== undefined) {
+                cachedTokens = parsed.usage.prompt_tokens_details.cached_tokens;
+              }
+            }
+
+            // Extract llama.cpp specific timings
+            if (parsed.timings) {
+              if (parsed.timings.prompt_n && !promptTokens) promptTokens = parsed.timings.prompt_n;
+              if (parsed.timings.predicted_n && !completionTokens) completionTokens = parsed.timings.predicted_n;
+              if (parsed.timings.cache_n !== undefined && !cachedTokens) cachedTokens = parsed.timings.cache_n;
+              if (parsed.timings.prompt_per_second) promptTps = Math.round(parsed.timings.prompt_per_second * 10) / 10;
+              if (parsed.timings.predicted_per_second) evalTps = Math.round(parsed.timings.predicted_per_second * 10) / 10;
+            }
+
             const delta = parsed.choices?.[0]?.delta?.content || '';
             if (delta) {
               if (firstTokenTime === null) {
@@ -608,15 +685,44 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
       const totalDurationMs = Date.now() - startTime;
       const ttft = firstTokenTime ? firstTokenTime - startTime : null;
       const finalTps =
-        totalDurationMs > 0 && tokenCount > 0
+        evalTps ??
+        (totalDurationMs > 0 && tokenCount > 0
           ? tokenCount / ((totalDurationMs - (ttft || 0)) / 1000)
-          : 0;
+          : 0);
+
+      // Fallbacks if server didn't emit usage breakdown
+      if (!promptTokens) {
+        promptTokens = apiMessages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 3);
+      }
+      if (!completionTokens) {
+        completionTokens = tokenCount;
+      }
+      if (!totalTokens) {
+        totalTokens = promptTokens + completionTokens;
+      }
+      if (cachedTokens === 0 && updatedMessages.length > 1) {
+        const priorMessages = [
+          ...(customSystemPrompt ? [{ role: 'system', content: customSystemPrompt }] : []),
+          ...updatedMessages.slice(0, -1).map((m) => ({ role: m.role, content: m.content })),
+        ];
+        cachedTokens = priorMessages.reduce((sum, m) => sum + estimateTokens(m.content) + 4, 3);
+      }
+      const cacheHitRatio = promptTokens > 0 ? Math.min(100, Math.round((cachedTokens / promptTokens) * 100)) : 0;
+      const turnContextUsagePercent = Math.min(100, Math.round((totalTokens / maxContextWindow) * 1000) / 10);
 
       const metrics: GenerationMetrics = {
         tokensPerSecond: Math.round(finalTps * 10) / 10,
         timeToFirstTokenMs: ttft ?? 0,
         totalDurationMs,
-        evalCount: tokenCount,
+        evalCount: completionTokens,
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        cachedTokens,
+        cacheHitRatio,
+        promptTokensPerSecond: promptTps,
+        contextWindow: maxContextWindow,
+        contextUsagePercent: turnContextUsagePercent,
       };
 
       const finalAssistantMsg: ChatMessage = {
@@ -873,6 +979,30 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
               </button>
             </div>
 
+            {/* Context Window Usage Meter Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMetricsForInspection(latestAssistantMessage?.metrics || null);
+                setIsContextModalOpen(true);
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-mono border transition-all shadow-sm ${
+                contextUsagePercent > 85
+                  ? 'bg-rose-500/10 border-rose-500/30 text-rose-500 hover:bg-rose-500/20'
+                  : contextUsagePercent > 60
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+                  : 'bg-studio-card border-studio-border text-studio-text hover:border-accent/40'
+              }`}
+              title="Click for full Conversation Context & KV Cache Telemetry"
+            >
+              <Database className="w-3.5 h-3.5 text-accent" />
+              <span className="font-semibold">{conversationContextTokens.toLocaleString()}</span>
+              <span className="text-studio-textMuted text-[10.5px]">/ {maxContextWindow.toLocaleString()}</span>
+              <span className="text-[10px] px-1 py-0.2 rounded font-semibold bg-accent-muted text-accent border border-accent/20">
+                {contextUsagePercent}%
+              </span>
+            </button>
+
             {/* Inference Tuning */}
             <button
               onClick={() => setShowParams(!showParams)}
@@ -1043,7 +1173,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
                     )}
 
                     {/* Message Action Footer */}
-                    <div className="flex items-center gap-2 mt-1.5 px-2 text-[11px] font-mono text-studio-textMuted">
+                    <div className="flex items-center gap-2 mt-1.5 px-2 text-[11px] font-mono text-studio-textMuted flex-wrap">
                       {msg.role === 'assistant' && msg.metrics && (
                         <>
                           <span className="flex items-center gap-1 text-accent font-semibold">
@@ -1051,7 +1181,26 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
                             {msg.metrics.tokensPerSecond} t/s
                           </span>
                           <span>•</span>
-                          <span>{msg.metrics.evalCount} tokens</span>
+                          <span title="Generated Output Tokens">
+                            {msg.metrics.evalCount || msg.metrics.completionTokens} out
+                          </span>
+                          {msg.metrics.promptTokens !== undefined && (
+                            <>
+                              <span>•</span>
+                              <span title="Input Prompt Context Tokens">{msg.metrics.promptTokens} in</span>
+                            </>
+                          )}
+                          {msg.metrics.cachedTokens !== undefined && msg.metrics.cachedTokens > 0 && (
+                            <>
+                              <span>•</span>
+                              <span
+                                className="flex items-center gap-0.5 text-emerald-500 font-medium cursor-help"
+                                title={`Reused ${msg.metrics.cachedTokens} prefix tokens directly from KV Cache (${msg.metrics.cacheHitRatio ?? 0}% hit rate)`}
+                              >
+                                ⚡ {msg.metrics.cachedTokens} cached ({msg.metrics.cacheHitRatio}%)
+                              </span>
+                            </>
+                          )}
                           {msg.metrics.timeToFirstTokenMs && (
                             <>
                               <span>•</span>
@@ -1060,6 +1209,17 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
                           )}
                           <span>•</span>
                           <span>{((msg.metrics.totalDurationMs || 0) / 1000).toFixed(1)}s</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedMetricsForInspection(msg.metrics || null);
+                              setIsContextModalOpen(true);
+                            }}
+                            className="p-1 rounded text-studio-textMuted hover:text-accent transition-colors ml-0.5"
+                            title="Inspect context & KV cache breakdown"
+                          >
+                            <Info className="w-3 h-3" />
+                          </button>
                         </>
                       )}
 
@@ -1150,8 +1310,28 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
             </div>
 
             <div className="flex items-center justify-between mt-2 px-1 text-[11px] text-studio-textMuted font-mono">
-              <span>Press Enter to send (Shift + Enter for new line)</span>
-              <span>Saved locally to device storage</span>
+              <span className="flex items-center gap-1.5 flex-wrap">
+                <span>Press Enter to send (Shift + Enter for new line)</span>
+                {input.trim().length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded bg-studio-card border border-studio-border text-accent font-semibold">
+                    ~{inputTokensEstimate} input tokens
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMetricsForInspection(latestAssistantMessage?.metrics || null);
+                  setIsContextModalOpen(true);
+                }}
+                className="hover:text-accent transition-colors flex items-center gap-1.5 font-medium"
+                title="Click to inspect context & KV cache telemetry"
+              >
+                <Database className="w-3 h-3 text-accent" />
+                <span>
+                  {conversationContextTokens.toLocaleString()} / {maxContextWindow.toLocaleString()} ctx ({contextUsagePercent}%)
+                </span>
+              </button>
             </div>
           </div>
         </div>
@@ -1316,6 +1496,22 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
             setCustomSystemPrompt(DEFAULT_PERSONAS[1].content);
           }
         }}
+      />
+
+      {/* Context & KV Cache Telemetry Modal */}
+      <ContextTelemetryModal
+        isOpen={isContextModalOpen}
+        onClose={() => {
+          setIsContextModalOpen(false);
+          setSelectedMetricsForInspection(null);
+        }}
+        engineStatus={engineStatus}
+        conversationContextTokens={conversationContextTokens}
+        maxContextWindow={maxContextWindow}
+        systemPromptTokens={systemPromptTokens}
+        historyTokens={historyTokens}
+        latestMetrics={selectedMetricsForInspection || latestAssistantMessage?.metrics || null}
+        messageCount={messages.length}
       />
     </div>
   );

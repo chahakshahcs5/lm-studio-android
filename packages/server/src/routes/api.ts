@@ -285,6 +285,33 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
       const interval = setInterval(() => {
         if (wordIdx >= words.length) {
           clearInterval(interval);
+          const estPromptTokens = Math.max(12, Math.round(prompt.length / 3.8));
+          const estCachedTokens = Math.round(estPromptTokens * 0.65);
+          const usagePayload = {
+            id: `chatcmpl-${Date.now()}`,
+            object: 'chat.completion.chunk',
+            created: Math.floor(Date.now() / 1000),
+            model: status.currentModel?.name,
+            choices: [],
+            usage: {
+              prompt_tokens: estPromptTokens,
+              completion_tokens: words.length,
+              total_tokens: estPromptTokens + words.length,
+              prompt_tokens_details: {
+                cached_tokens: estCachedTokens,
+              },
+            },
+            timings: {
+              prompt_n: estPromptTokens,
+              prompt_ms: 32,
+              prompt_per_second: 375.0,
+              predicted_n: words.length,
+              predicted_ms: words.length * 35,
+              predicted_per_second: 28.5,
+              cache_n: estCachedTokens,
+            },
+          };
+          res.write(`data: ${JSON.stringify(usagePayload)}\n\n`);
           res.write('data: [DONE]\n\n');
           res.end();
           return;
@@ -315,6 +342,9 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
       });
       return;
     } else {
+      const estPromptTokens = Math.max(12, Math.round(prompt.length / 3.8));
+      const estCachedTokens = Math.round(estPromptTokens * 0.65);
+      const completionTokens = simulatedResponse.split(' ').length;
       return res.json({
         id: `chatcmpl-${Date.now()}`,
         object: 'chat.completion',
@@ -327,6 +357,14 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
             finish_reason: 'stop',
           },
         ],
+        usage: {
+          prompt_tokens: estPromptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: estPromptTokens + completionTokens,
+          prompt_tokens_details: {
+            cached_tokens: estCachedTokens,
+          },
+        },
       });
     }
   }
@@ -407,6 +445,41 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
   });
 
   proxyReq.write(JSON.stringify(req.body));
+  proxyReq.end();
+});
+
+// Proxy tokenize & server properties
+apiRouter.all(['/tokenize', '/detokenize', '/props', '/slots'], async (req: Request, res: Response) => {
+  const status = llamaEngine.getStatus();
+  if (!status.loaded || llamaEngine.getIsMock()) {
+    if (req.path === '/tokenize') {
+      const text = req.body?.content || '';
+      const estimated = Math.max(1, Math.ceil(text.length / 3.8));
+      return res.json({ tokens: Array.from({ length: estimated }, (_, i) => i + 1) });
+    }
+    return res.status(503).json({ error: 'Engine not active' });
+  }
+
+  const targetUrl = new URL(llamaEngine.getLlamaUrl() + req.path);
+  const proxyReq = http.request(
+    targetUrl,
+    {
+      method: req.method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+    (proxyRes) => {
+      res.status(proxyRes.statusCode || 200);
+      proxyRes.pipe(res);
+    }
+  );
+  proxyReq.on('error', (err) => {
+    res.status(502).json({ error: err.message });
+  });
+  if (req.method === 'POST' || req.method === 'PUT') {
+    proxyReq.write(JSON.stringify(req.body));
+  }
   proxyReq.end();
 });
 

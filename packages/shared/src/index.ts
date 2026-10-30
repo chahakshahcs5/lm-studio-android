@@ -160,6 +160,15 @@ export interface GenerationMetrics {
   tokensPerSecond?: number;
   timeToFirstTokenMs?: number;
   totalDurationMs?: number;
+  // Advanced context and token telemetry
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cachedTokens?: number;
+  cacheHitRatio?: number;
+  promptTokensPerSecond?: number;
+  contextWindow?: number;
+  contextUsagePercent?: number;
 }
 
 export interface InferenceParams {
