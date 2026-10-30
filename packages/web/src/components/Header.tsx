@@ -59,12 +59,17 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Temperature color logic
   const temp = battery?.temperature;
+  const isBatterySensor =
+    battery?.sensorLabel?.toLowerCase().includes('battery') ||
+    battery?.sensorLabel?.toLowerCase().includes('bms');
+  const tempLimit = isBatterySensor ? 45 : 78;
+  const tempWarn = isBatterySensor ? 39 : 68;
   const tempColor =
     temp === null || temp === undefined
       ? 'text-studio-textMuted'
-      : temp >= 44
+      : temp >= tempLimit
       ? 'text-crimson-accent font-bold animate-pulse'
-      : temp >= 38
+      : temp >= tempWarn
       ? 'text-amber-accent'
       : 'text-accent';
 

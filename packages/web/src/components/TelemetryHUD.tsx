@@ -52,7 +52,14 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
     ? (engineStatus.currentModel.sizeBytes / (1024 * 1024 * 1024)).toFixed(2)
     : '0.00';
 
-  const isHot = battery.temperature !== null && battery.temperature >= 42.0;
+  const isBattery =
+    battery.sensorLabel?.toLowerCase().includes('battery') ||
+    battery.sensorLabel?.toLowerCase().includes('bms');
+  // Silicon junction (TSENS) runs normally at 50°C-75°C under LLM compute; battery limit is 45°C
+  const hotThreshold = isBattery ? 45.0 : 78.0;
+  const warmThreshold = isBattery ? 39.0 : 68.0;
+  const isHot = battery.temperature !== null && battery.temperature >= hotThreshold;
+  const isWarm = battery.temperature !== null && battery.temperature >= warmThreshold;
 
   // Speedometer TPS: live if generating, else last run TPS if available
   const displayTps =
@@ -69,7 +76,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
   return (
     <aside className="w-80 max-w-full bg-studio-surface border-l border-studio-border flex flex-col h-full overflow-y-auto select-none p-4 gap-4 transition-colors">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-studio-border">
+      <div className="flex items-center justify-between pb-3 border-b border-studio-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <Activity className="w-4 h-4 text-accent" />
           <h3 className="font-mono text-xs font-bold uppercase tracking-wider text-studio-text">
@@ -101,7 +108,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
       {/* Device & Processor Header Chip */}
       {(cpu.deviceModel || cpu.socModel) && (
-        <div className="p-2.5 rounded-xl bg-studio-card border border-studio-border flex items-center justify-between gap-2 shadow-studio-subtle text-xs">
+        <div className="p-2.5 rounded-xl bg-studio-card border border-studio-border flex items-center justify-between gap-2 shadow-studio-subtle text-xs flex-shrink-0">
           <div className="flex items-center gap-2 min-w-0">
             <Smartphone className="w-4 h-4 text-accent flex-shrink-0" />
             <div className="min-w-0">
@@ -121,43 +128,58 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
       {/* Thermal & Throttle Alert if triggered */}
       {isThrottled && (
-        <div className="p-3 rounded-xl bg-crimson-muted border border-crimson-accent/40 text-xs flex items-start gap-2.5 animate-pulse">
+        <div className="p-3 rounded-xl bg-crimson-muted border border-crimson-accent/40 text-xs flex items-start gap-2.5 animate-pulse flex-shrink-0">
           <AlertTriangle className="w-4 h-4 text-crimson-accent flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-semibold text-crimson-accent block">Thermal Throttle Warning</span>
             <p className="text-[11px] text-studio-textMuted mt-0.5">
-              Phone temperature is high ({battery.temperature}°C). Consider reducing threads or pausing generation.
+              {isBattery ? 'Battery' : 'SoC processor'} temperature is high ({battery.temperature}°C). Consider reducing threads or pausing generation.
             </p>
           </div>
         </div>
       )}
 
       {/* Real-time Token Speedometer Badge */}
-      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border relative overflow-hidden shadow-studio-subtle">
-        <div className="flex items-center justify-between text-xs text-studio-textMuted mb-1">
+      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border relative shadow-studio-subtle flex-shrink-0 flex flex-col justify-between min-h-[115px]">
+        <div className="flex items-center justify-between text-xs text-studio-textMuted">
           <div className="flex items-center gap-1.5">
             <Gauge className="w-3.5 h-3.5 text-accent" />
-            <span>Throughput Speed</span>
+            <span className="font-semibold text-studio-text">Throughput Speed</span>
           </div>
           <span
-            className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded ${
+            className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border transition-all ${
               isActivelyGenerating
-                ? 'bg-accent text-white shadow-accent-glow'
-                : 'bg-studio-surface text-studio-textMuted'
+                ? 'bg-accent text-white border-accent shadow-accent-glow animate-pulse'
+                : parseFloat(displayTps) > 0
+                ? 'bg-accent-muted text-accent border-accent/30'
+                : 'bg-studio-surface text-studio-textMuted border-studio-borderSubtle'
             }`}
           >
-            {isActivelyGenerating ? 'Active ⚡' : parseFloat(displayTps) > 0 ? 'Last Run' : 'Standby'}
+            {isActivelyGenerating ? 'Generating ⚡' : parseFloat(displayTps) > 0 ? 'Last Run' : 'Standby'}
           </span>
         </div>
 
-        <div className="flex items-baseline gap-2">
-          <span className="font-mono text-3xl font-extrabold text-accent tracking-tight">
+        <div className="flex items-baseline gap-2 my-1">
+          <span className="font-mono text-3xl font-extrabold text-accent tracking-tight leading-none">
             {displayTps}
           </span>
           <span className="font-mono text-xs font-semibold text-studio-textMuted">tokens / sec</span>
         </div>
 
-        <div className="mt-2.5 flex items-center justify-between text-[11px] font-mono text-studio-textMuted pt-2 border-t border-studio-borderSubtle">
+        {/* Live Generation Pulse Bar */}
+        <div className="w-full h-1 bg-studio-surface rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all duration-300 ${
+              isActivelyGenerating
+                ? 'bg-accent animate-pulse w-full'
+                : parseFloat(displayTps) > 0
+                ? 'bg-accent-muted w-2/3'
+                : 'bg-studio-borderSubtle w-0'
+            }`}
+          />
+        </div>
+
+        <div className="flex items-center justify-between text-[11px] font-mono text-studio-textMuted pt-1.5 border-t border-studio-borderSubtle">
           <span>Total Generated</span>
           <span className="text-studio-text font-bold">
             {engineStatus?.tokensGeneratedTotal || 0} tokens
@@ -166,7 +188,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
       </div>
 
       {/* Live CPU Topology & Dynamic Core Loads */}
-      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle">
+      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle flex-shrink-0">
         <div className="flex items-center justify-between text-xs font-semibold text-studio-text">
           <div className="flex items-center gap-1.5">
             <Cpu className="w-4 h-4 text-studio-textMuted" />
@@ -261,7 +283,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
       </div>
 
       {/* Battery & Thermal Station */}
-      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle">
+      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle flex-shrink-0">
         <div className="flex items-center justify-between text-xs font-semibold text-studio-text">
           <div className="flex items-center gap-1.5">
             <Battery className="w-4 h-4 text-studio-textMuted" />
@@ -276,35 +298,62 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
         <div className="w-full h-1.5 bg-studio-surface rounded-full overflow-hidden">
           <div
             className={`h-full transition-all duration-300 ${
-              (battery.level ?? 100) <= 20
+              battery.level === null
+                ? 'w-0'
+                : battery.level <= 20
                 ? 'bg-crimson-accent'
-                : (battery.level ?? 100) <= 40
+                : battery.level <= 40
                 ? 'bg-amber-accent'
                 : 'bg-accent'
             }`}
-            style={{ width: `${battery.level ?? 100}%` }}
+            style={{ width: battery.level !== null ? `${battery.level}%` : '0%' }}
           />
         </div>
+
+        {battery.level === null && (
+          <p className="text-[10px] text-studio-textMuted -mt-1 leading-tight">
+            Battery level restricted by SELinux. Run{' '}
+            <code className="text-accent bg-studio-surface px-1 py-0.5 rounded font-mono text-[9px]">
+              pkg install termux-api
+            </code>{' '}
+            for live stats.
+          </p>
+        )}
 
         {/* Temperature Reading */}
         <div className="flex items-center justify-between pt-1 text-xs">
           <div className="flex items-center gap-1.5">
-            <Flame className={`w-3.5 h-3.5 ${isHot ? 'text-crimson-accent' : 'text-amber-accent'}`} />
+            <Flame
+              className={`w-3.5 h-3.5 ${
+                isHot
+                  ? 'text-crimson-accent'
+                  : isWarm
+                  ? 'text-amber-accent'
+                  : 'text-accent'
+              }`}
+            />
             <span className="text-studio-textMuted">
               {battery.sensorLabel || 'Device Temp'}
             </span>
           </div>
-          <span
-            className={`font-mono font-bold ${
-              isHot
-                ? 'text-crimson-accent'
-                : battery.temperature && battery.temperature >= 38
-                ? 'text-amber-accent'
-                : 'text-accent'
-            }`}
-          >
-            {battery.temperature !== null ? `${battery.temperature}°C` : 'N/A'}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`font-mono font-bold ${
+                isHot
+                  ? 'text-crimson-accent'
+                  : isWarm
+                  ? 'text-amber-accent'
+                  : 'text-accent'
+              }`}
+            >
+              {battery.temperature !== null ? `${battery.temperature}°C` : 'N/A'}
+            </span>
+            {battery.temperature !== null && !isHot && (
+              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded border border-emerald-500/20">
+                Optimal
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center justify-between text-[11px] text-studio-textMuted pt-1 border-t border-studio-borderSubtle">
@@ -316,7 +365,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
       </div>
 
       {/* Unified RAM Allocation Station */}
-      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle">
+      <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-3 shadow-studio-subtle flex-shrink-0">
         <div className="flex items-center justify-between text-xs font-semibold text-studio-text">
           <div className="flex items-center gap-1.5">
             <HardDrive className="w-4 h-4 text-studio-textMuted" />
@@ -377,7 +426,7 @@ export const TelemetryHUD: React.FC<TelemetryHUDProps> = ({
 
       {/* Active Acceleration Badges */}
       {config && (
-        <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-2 shadow-studio-subtle">
+        <div className="p-3.5 rounded-xl bg-studio-card border border-studio-border flex flex-col gap-2 shadow-studio-subtle flex-shrink-0">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-studio-text mb-1">
             <ShieldCheck className="w-4 h-4 text-accent" />
             <span>Active Acceleration</span>

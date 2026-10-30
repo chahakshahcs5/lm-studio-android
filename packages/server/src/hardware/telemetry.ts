@@ -117,32 +117,94 @@ export class HardwareMonitor {
           }
         }
       } catch {
-        // termux-api not installed, fall through to sysfs
+        // termux-api not installed, fall through to sysfs / dumpsys
       }
 
-      // 2. Try power_supply directories
+      // 2. Try Android dumpsys battery service
+      try {
+        if (fs.existsSync('/system/bin/dumpsys')) {
+          const dumpsys = execFileSync('/system/bin/dumpsys', ['battery'], {
+            encoding: 'utf8',
+            timeout: 1200,
+            stdio: ['ignore', 'pipe', 'ignore'],
+          });
+          if (dumpsys) {
+            const levelMatch = dumpsys.match(/level:\s*(\d+)/i);
+            const tempMatch = dumpsys.match(/temperature:\s*(\d+)/i);
+            const statusMatch = dumpsys.match(/status:\s*(\d+)/i);
+            const acMatch = dumpsys.match(/AC powered:\s*true/i);
+            const usbMatch = dumpsys.match(/USB powered:\s*true/i);
+
+            if (levelMatch) {
+              level = parseInt(levelMatch[1], 10);
+              source = 'sysfs';
+            }
+            if (tempMatch && temp === null) {
+              const rawT = parseInt(tempMatch[1], 10);
+              temp = rawT > 100 ? Math.round((rawT / 10.0) * 10) / 10 : rawT;
+              sensorLabel = 'Battery Sensor';
+            }
+            if (statusMatch) {
+              isCharging = statusMatch[1] === '2'; // 2 = BATTERY_STATUS_CHARGING
+            } else if (acMatch || usbMatch) {
+              isCharging = true;
+            }
+          }
+        }
+      } catch {
+        // dumpsys restricted
+      }
+
+      // 3. Try cmd battery get level
+      if (level === null) {
+        try {
+          if (fs.existsSync('/system/bin/cmd')) {
+            const cmdLvl = execFileSync('/system/bin/cmd', ['battery', 'get', 'level'], {
+              encoding: 'utf8',
+              timeout: 1000,
+              stdio: ['ignore', 'pipe', 'ignore'],
+            }).trim();
+            const parsed = parseInt(cmdLvl, 10);
+            if (!isNaN(parsed) && parsed >= 0 && parsed <= 100) {
+              level = parsed;
+              source = 'sysfs';
+            }
+          }
+        } catch {
+          // cmd restricted
+        }
+      }
+
+      // 4. Try power_supply directories
       try {
         const psDirs = ['/sys/class/power_supply/battery', '/sys/class/power_supply/bms', '/sys/class/power_supply/BAT0'];
         for (const dir of psDirs) {
           if (fs.existsSync(dir)) {
-            const capPath = `${dir}/capacity`;
-            if (fs.existsSync(capPath)) {
-              level = parseInt(fs.readFileSync(capPath, 'utf8').trim(), 10);
+            if (level === null) {
+              const capPath = `${dir}/capacity`;
+              if (fs.existsSync(capPath)) {
+                level = parseInt(fs.readFileSync(capPath, 'utf8').trim(), 10);
+              }
             }
 
-            const tempPath = `${dir}/temp`;
-            if (fs.existsSync(tempPath)) {
-              const raw = parseInt(fs.readFileSync(tempPath, 'utf8').trim(), 10);
-              temp = raw > 100 ? Math.round((raw / 10.0) * 10) / 10 : raw;
+            if (temp === null) {
+              const tempPath = `${dir}/temp`;
+              if (fs.existsSync(tempPath)) {
+                const raw = parseInt(fs.readFileSync(tempPath, 'utf8').trim(), 10);
+                temp = raw > 100 ? Math.round((raw / 10.0) * 10) / 10 : raw;
+                sensorLabel = 'Battery Sensor';
+              }
             }
 
-            const statusPath = `${dir}/status`;
-            if (fs.existsSync(statusPath)) {
-              const status = fs.readFileSync(statusPath, 'utf8').trim().toLowerCase();
-              isCharging = status === 'charging' || status === 'full';
+            if (isCharging === null) {
+              const statusPath = `${dir}/status`;
+              if (fs.existsSync(statusPath)) {
+                const status = fs.readFileSync(statusPath, 'utf8').trim().toLowerCase();
+                isCharging = status === 'charging' || status === 'full';
+              }
             }
 
-            if (level !== null || temp !== null) {
+            if (level !== null && temp !== null) {
               source = 'sysfs';
               break;
             }
@@ -152,7 +214,7 @@ export class HardwareMonitor {
         // sysfs restricted
       }
 
-      // 3. Fallback for temperature: scan /sys/class/thermal/thermal_zone*
+      // 5. Fallback for temperature: scan /sys/class/thermal/thermal_zone*
       if (temp === null) {
         try {
           const thermalDir = '/sys/class/thermal';
@@ -187,23 +249,21 @@ export class HardwareMonitor {
       }
     }
 
-    // 4. Smooth Realistic Estimation if restricted by Android SELinux
-    if (level === null || temp === null) {
-      // Provide dynamic realistic stats that fluctuate smoothly based on system load
+    // 6. Smooth Realistic Estimation if temperature is restricted
+    if (temp === null) {
       const cpuUsage = this.getQuickCpuUsage();
-      const baseTemp = 35.0 + (cpuUsage / 100) * 8.5; // Warms up under load
-      const simulatedTemp = Math.round(baseTemp * 10) / 10;
-
-      return {
-        level: level ?? 82,
-        temperature: temp ?? simulatedTemp,
-        isCharging: isCharging ?? false,
-        source: 'estimated',
-        sensorLabel: temp !== null ? sensorLabel : 'Estimated Thermal',
-      };
+      const baseTemp = 36.0 + (cpuUsage / 100) * 9.0;
+      temp = Math.round(baseTemp * 10) / 10;
+      sensorLabel = 'Estimated Thermal';
     }
 
-    return { level, temperature: temp, isCharging, source, sensorLabel };
+    return {
+      level, // Genuine level or null (never fabricate fake numbers like 82%)
+      temperature: temp,
+      isCharging: isCharging ?? false,
+      source: level !== null ? source : 'estimated',
+      sensorLabel,
+    };
   }
 
   private getQuickCpuUsage(): number {
@@ -420,7 +480,13 @@ export class HardwareMonitor {
     const battery = this.getBatteryTelemetry();
     const cpu = this.detectCpuTopology();
     const ram = this.getRamTelemetry(modelAllocatedBytes);
-    const isThrottled = battery.temperature !== null && battery.temperature >= 44.0;
+    const isBatterySensor =
+      battery.sensorLabel?.toLowerCase().includes('battery') ||
+      battery.sensorLabel?.toLowerCase().includes('bms');
+    // Mobile SoC silicon junction (TSENS) operating range is 45°C - 75°C under LLM load; throttles at ~80°C+.
+    // Physical battery threshold is 45°C.
+    const throttleThreshold = isBatterySensor ? 45.0 : 78.0;
+    const isThrottled = battery.temperature !== null && battery.temperature >= throttleThreshold;
 
     return {
       battery,
