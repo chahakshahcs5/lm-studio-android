@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -14,9 +14,89 @@ export class LlamaEngine {
   private isMockMode: boolean = false;
   private tokensGeneratedTotal: number = 0;
   private logPath: string;
+  private featuresCache: Map<
+    string,
+    {
+      flashAttnStyle: 'value' | 'flag' | 'none';
+      supportsKvQuant: boolean;
+      supportsGpuLayers: boolean;
+    }
+  > = new Map();
 
   constructor() {
     this.logPath = path.join(os.homedir(), 'llama_server.log');
+  }
+
+  public getRecentLogs(maxLines: number = 25): string {
+    if (fs.existsSync(this.logPath)) {
+      try {
+        const lines = fs.readFileSync(this.logPath, 'utf8').trim().split('\n');
+        return lines.slice(-maxLines).join('\n');
+      } catch {
+        return '';
+      }
+    }
+    return '';
+  }
+
+  public getBinaryFeatures(binaryPath: string): {
+    flashAttnStyle: 'value' | 'flag' | 'none';
+    supportsKvQuant: boolean;
+    supportsGpuLayers: boolean;
+  } {
+    if (this.featuresCache.has(binaryPath)) {
+      return this.featuresCache.get(binaryPath)!;
+    }
+
+    const defaultFeatures = {
+      flashAttnStyle: 'value' as 'value' | 'flag' | 'none',
+      supportsKvQuant: true,
+      supportsGpuLayers: true,
+    };
+
+    try {
+      const output = execFileSync(binaryPath, ['-h'], {
+        timeout: 3000,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const combined = output.toLowerCase();
+
+      if (combined.includes('--flash-attn') || combined.includes('-fa')) {
+        if (
+          combined.includes('[on|off|auto]') ||
+          combined.includes('<on|off|auto>') ||
+          combined.includes('set flash attention use') ||
+          combined.includes('llama_arg_flash_attn')
+        ) {
+          defaultFeatures.flashAttnStyle = 'value';
+        } else {
+          defaultFeatures.flashAttnStyle = 'flag';
+        }
+      } else {
+        defaultFeatures.flashAttnStyle = 'none';
+      }
+
+      defaultFeatures.supportsKvQuant = combined.includes('-ctk') || combined.includes('--cache-type-k');
+      defaultFeatures.supportsGpuLayers = combined.includes('-ngl') || combined.includes('--n-gpu-layers');
+    } catch (err: any) {
+      const combined = ((err.stdout || '') + (err.stderr || '')).toLowerCase();
+      if (combined.includes('--flash-attn') || combined.includes('-fa')) {
+        if (
+          combined.includes('[on|off|auto]') ||
+          combined.includes('<on|off|auto>') ||
+          combined.includes('set flash attention use') ||
+          combined.includes('llama_arg_flash_attn')
+        ) {
+          defaultFeatures.flashAttnStyle = 'value';
+        } else {
+          defaultFeatures.flashAttnStyle = 'flag';
+        }
+      }
+    }
+
+    this.featuresCache.set(binaryPath, defaultFeatures);
+    return defaultFeatures;
   }
 
   public findBinary(): string | null {
@@ -96,15 +176,21 @@ export class LlamaEngine {
       '--port', this.port.toString(),
     ];
 
+    const features = this.getBinaryFeatures(binary);
+
     // Optional acceleration flags
     const accelArgs = [...baseArgs];
-    if (config.flashAttn) {
+
+    if (features.flashAttnStyle === 'value') {
+      accelArgs.push('--flash-attn', config.flashAttn ? 'on' : 'off');
+    } else if (features.flashAttnStyle === 'flag' && config.flashAttn) {
       accelArgs.push('--flash-attn');
     }
-    if (config.kvQuant && config.kvQuant !== 'f16') {
+
+    if (config.kvQuant && config.kvQuant !== 'f16' && features.supportsKvQuant) {
       accelArgs.push('-ctk', config.kvQuant, '-ctv', config.kvQuant);
     }
-    if (config.gpuLayers > 0) {
+    if (config.gpuLayers > 0 && features.supportsGpuLayers) {
       accelArgs.push('-ngl', config.gpuLayers.toString());
     }
 

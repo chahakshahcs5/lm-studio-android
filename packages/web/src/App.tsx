@@ -7,6 +7,7 @@ import { ChatPlayground } from './components/ChatPlayground';
 import { ModelExplorer } from './components/ModelExplorer';
 import { ApiPlayground } from './components/ApiPlayground';
 import { ThemeModal } from './components/ThemeModal';
+import { ErrorModal, ErrorModalData } from './components/ErrorModal';
 
 export function App() {
   const { telemetry, engineStatus, downloadState, isConnected, serverIp, refreshStatus } =
@@ -28,6 +29,19 @@ export function App() {
   const [currentTps, setCurrentTps] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
+  const [errorModalData, setErrorModalData] = useState<ErrorModalData | null>(null);
+
+  const showError = (opts: Partial<ErrorModalData> & { message: string }) => {
+    setErrorModalData({
+      isOpen: true,
+      title: opts.title || 'Engine Diagnostic Notice',
+      message: opts.message,
+      details: opts.details,
+      tips: opts.tips,
+      onRetry: opts.onRetry,
+      onOpenConfig: opts.onOpenConfig,
+    });
+  };
 
   const handleUnloadModel = async () => {
     setIsLoading(true);
@@ -65,7 +79,12 @@ export function App() {
         {/* Active Tab Screen */}
         <main className="flex-1 flex flex-col overflow-hidden relative">
           {activeTab === 'chat' && (
-            <ChatPlayground engineStatus={engineStatus} onTpsUpdate={setCurrentTps} />
+            <ChatPlayground
+              engineStatus={engineStatus}
+              onTpsUpdate={setCurrentTps}
+              onNavigateToModels={() => setActiveTab('models')}
+              onError={showError}
+            />
           )}
 
           {activeTab === 'models' && (
@@ -74,6 +93,7 @@ export function App() {
               telemetry={telemetry}
               downloadState={downloadState}
               onRefreshStatus={refreshStatus}
+              onError={showError}
             />
           )}
 
@@ -105,8 +125,15 @@ export function App() {
         onUpdateSecondary={updateSecondary}
         onResetToDefault={resetToDefault}
       />
+
+      {/* High-Fidelity Diagnostic Error Modal */}
+      <ErrorModal
+        data={errorModalData}
+        onClose={() => setErrorModalData(null)}
+      />
     </div>
   );
 }
 
 export default App;
+

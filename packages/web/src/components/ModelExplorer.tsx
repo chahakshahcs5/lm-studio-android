@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Download,
   HardDrive,
@@ -19,12 +20,14 @@ import {
   HfModelPreset,
   LocalModel,
 } from '@lm-studio-android/shared';
+import { ErrorModalData } from './ErrorModal';
 
 interface ModelExplorerProps {
   engineStatus: EngineStatus | null;
   telemetry: HardwareTelemetry | null;
   downloadState: DownloadState | null;
   onRefreshStatus: () => void;
+  onError?: (data: Partial<ErrorModalData> & { message: string }) => void;
 }
 
 export const ModelExplorer: React.FC<ModelExplorerProps> = ({
@@ -32,6 +35,7 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
   telemetry,
   downloadState,
   onRefreshStatus,
+  onError,
 }) => {
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
   const [presets, setPresets] = useState<HfModelPreset[]>([]);
@@ -100,14 +104,28 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || 'Failed to load model');
+        const err = await res.json().catch(() => ({}));
+        if (onError) {
+          onError({
+            title: 'Model Acceleration Failed',
+            message: err.error || 'Failed to start llama-server with the requested profile.',
+            details: err.details || err.error,
+            onOpenConfig: () => setSelectedModelForConfig(model),
+            onRetry: () => handleLoadModel(model),
+          });
+        }
       } else {
         onRefreshStatus();
         setSelectedModelForConfig(null);
       }
     } catch (e: any) {
-      alert(e.message || 'Error communicating with engine');
+      if (onError) {
+        onError({
+          title: 'Communication Error',
+          message: e.message || 'Error communicating with engine server',
+          onRetry: () => handleLoadModel(model),
+        });
+      }
     } finally {
       setLoadingModelId(null);
     }
@@ -126,13 +144,24 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        alert(err.error || 'Failed to initiate download');
+        const err = await res.json().catch(() => ({}));
+        if (onError) {
+          onError({
+            title: 'Download Failed',
+            message: err.error || 'Failed to initiate download for ' + preset.name,
+            details: err.details,
+          });
+        }
       } else {
         fetchData();
       }
     } catch (e: any) {
-      alert(e.message);
+      if (onError) {
+        onError({
+          title: 'Download Error',
+          message: e.message || 'Error initiating download',
+        });
+      }
     }
   };
 
@@ -283,124 +312,136 @@ export const ModelExplorer: React.FC<ModelExplorerProps> = ({
         )}
       </div>
 
-      {/* Configuration Modal when Mount is clicked */}
-      {selectedModelForConfig && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-studio-surface border border-studio-border rounded-xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between pb-3 border-b border-studio-border">
-              <div>
-                <h3 className="font-mono text-sm font-bold text-studio-text">
-                  Configure Acceleration Profile
-                </h3>
-                <span className="text-xs text-accent font-mono">
-                  {selectedModelForConfig.name}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedModelForConfig(null)}
-                className="text-studio-textMuted hover:text-studio-text"
-              >
-                ✕
-              </button>
-            </div>
+      {/* Configuration Modal when Mount is clicked (Portaled to document.body for full viewport coverage) */}
+      {selectedModelForConfig &&
+        createPortal(
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-md z-[9999] flex items-center justify-center p-4 select-none animate-in fade-in duration-200"
+            onClick={() => setSelectedModelForConfig(null)}
+          >
+            <div
+              className="bg-studio-surface border border-studio-border rounded-2xl max-w-md w-full p-6 shadow-2xl flex flex-col gap-4 relative overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Subtle top ambient glow */}
+              <div className="absolute -top-12 -right-12 w-32 h-32 bg-accent/15 rounded-full blur-2xl pointer-events-none" />
 
-            {/* Tuning Options */}
-            <div className="space-y-3 text-xs">
-              {/* Threads */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">Inference Threads</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="16"
-                  value={threads}
-                  onChange={(e) => setThreads(parseInt(e.target.value, 10))}
-                  className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-accent focus:outline-none"
-                />
-              </div>
-
-              {/* Context Size */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">Context Window</span>
-                <select
-                  value={ctxSize}
-                  onChange={(e) => setCtxSize(parseInt(e.target.value, 10))}
-                  className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
+              <div className="flex items-center justify-between pb-3 border-b border-studio-border">
+                <div>
+                  <h3 className="font-mono text-sm font-bold text-studio-text">
+                    Configure Acceleration Profile
+                  </h3>
+                  <span className="text-xs text-accent font-mono">
+                    {selectedModelForConfig.name}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSelectedModelForConfig(null)}
+                  className="p-1 rounded-lg text-studio-textMuted hover:text-studio-text hover:bg-studio-card transition-colors"
+                  title="Close modal"
                 >
-                  <option value={1024}>1024 tokens</option>
-                  <option value={2048}>2048 tokens</option>
-                  <option value={4096}>4096 tokens</option>
-                  <option value={8192}>8192 tokens</option>
-                </select>
+                  ✕
+                </button>
               </div>
 
-              {/* Flash-Attention */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">Flash-Attention (-fa)</span>
-                <input
-                  type="checkbox"
-                  checked={flashAttn}
-                  onChange={(e) => setFlashAttn(e.target.checked)}
-                  className="accent-accent cursor-pointer"
-                />
+              {/* Tuning Options */}
+              <div className="space-y-3 text-xs">
+                {/* Threads */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">Inference Threads</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="16"
+                    value={threads}
+                    onChange={(e) => setThreads(parseInt(e.target.value, 10))}
+                    className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-accent focus:outline-none"
+                  />
+                </div>
+
+                {/* Context Size */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">Context Window</span>
+                  <select
+                    value={ctxSize}
+                    onChange={(e) => setCtxSize(parseInt(e.target.value, 10))}
+                    className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
+                  >
+                    <option value={1024}>1024 tokens</option>
+                    <option value={2048}>2048 tokens</option>
+                    <option value={4096}>4096 tokens</option>
+                    <option value={8192}>8192 tokens</option>
+                  </select>
+                </div>
+
+                {/* Flash-Attention */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">Flash-Attention (-fa)</span>
+                  <input
+                    type="checkbox"
+                    checked={flashAttn}
+                    onChange={(e) => setFlashAttn(e.target.checked)}
+                    className="accent-accent cursor-pointer"
+                  />
+                </div>
+
+                {/* KV Quant */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">KV Cache Quantization</span>
+                  <select
+                    value={kvQuant}
+                    onChange={(e) => setKvQuant(e.target.value as any)}
+                    className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
+                  >
+                    <option value="f16">f16 (standard)</option>
+                    <option value="q8_0">q8_0 (50% bandwidth reduction)</option>
+                    <option value="q4_0">q4_0 (75% bandwidth reduction)</option>
+                  </select>
+                </div>
+
+                {/* GPU Layers */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">Mobile GPU Offload (Vulkan)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="33"
+                    value={gpuLayers}
+                    onChange={(e) => setGpuLayers(parseInt(e.target.value, 10))}
+                    className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-studio-text focus:outline-none"
+                  />
+                </div>
+
+                {/* Big core pinning */}
+                <div className="flex items-center justify-between">
+                  <span className="text-studio-text">Pin to ARM Big Cores (taskset)</span>
+                  <input
+                    type="checkbox"
+                    checked={pinCores}
+                    onChange={(e) => setPinCores(e.target.checked)}
+                    className="accent-accent cursor-pointer"
+                  />
+                </div>
               </div>
 
-              {/* KV Quant */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">KV Cache Quantization</span>
-                <select
-                  value={kvQuant}
-                  onChange={(e) => setKvQuant(e.target.value as any)}
-                  className="bg-studio-card border border-studio-border rounded px-2 py-1 text-studio-text font-mono text-xs"
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-studio-border">
+                <button
+                  onClick={() => setSelectedModelForConfig(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-studio-textMuted hover:text-studio-text transition-colors"
                 >
-                  <option value="f16">f16 (standard)</option>
-                  <option value="q8_0">q8_0 (50% bandwidth reduction)</option>
-                  <option value="q4_0">q4_0 (75% bandwidth reduction)</option>
-                </select>
-              </div>
-
-              {/* GPU Layers */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">Mobile GPU Offload (Vulkan)</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="33"
-                  value={gpuLayers}
-                  onChange={(e) => setGpuLayers(parseInt(e.target.value, 10))}
-                  className="w-20 bg-studio-card border border-studio-border rounded px-2 py-1 text-right font-mono text-studio-text focus:outline-none"
-                />
-              </div>
-
-              {/* Big core pinning */}
-              <div className="flex items-center justify-between">
-                <span className="text-studio-text">Pin to ARM Big Cores (taskset)</span>
-                <input
-                  type="checkbox"
-                  checked={pinCores}
-                  onChange={(e) => setPinCores(e.target.checked)}
-                  className="accent-accent cursor-pointer"
-                />
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleLoadModel(selectedModelForConfig)}
+                  className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 transition-all shadow-accent-glow"
+                >
+                  Launch & Accelerate
+                </button>
               </div>
             </div>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-studio-border">
-              <button
-                onClick={() => setSelectedModelForConfig(null)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium text-studio-textMuted hover:text-studio-text transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleLoadModel(selectedModelForConfig)}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-accent text-white hover:opacity-90 transition-all shadow-accent-glow"
-              >
-                Launch & Accelerate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
       {/* Section 2: Curated Hugging Face Model Catalog */}
       <div>

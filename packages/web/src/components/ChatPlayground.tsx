@@ -52,9 +52,16 @@ const PRESET_SYSTEM_PROMPTS: SystemPromptPreset[] = [
 interface ChatPlaygroundProps {
   engineStatus: EngineStatus | null;
   onTpsUpdate?: (tps: number) => void;
+  onNavigateToModels?: () => void;
+  onError?: (data: any) => void;
 }
 
-export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, onTpsUpdate }) => {
+export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
+  engineStatus,
+  onTpsUpdate,
+  onNavigateToModels,
+  onError,
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState<boolean>(false);
@@ -100,7 +107,18 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
     if (!text || isStreaming) return;
 
     if (!engineStatus?.loaded) {
-      alert('Please load a model from the Models pane first.');
+      if (onError) {
+        onError({
+          title: 'No Active Model Loaded',
+          message:
+            'Inference cannot start because no GGUF model is mounted in device memory.',
+          tips: [
+            'Click on the Models tab in the header to view downloaded models.',
+            'Click "Mount" on your preferred model to configure threads and start the engine.',
+          ],
+          onRetry: onNavigateToModels,
+        });
+      }
       return;
     }
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   Palette,
   Sun,
@@ -68,9 +69,15 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
     onUpdateSecondary(randomSecondary);
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 select-none">
-      <div className="bg-studio-surface border border-studio-border rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto">
+  return createPortal(
+    <div
+      className="fixed inset-0 bg-black/75 backdrop-blur-md z-[9999] flex items-center justify-center p-4 select-none animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="bg-studio-surface border border-studio-border rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-6 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-studio-border">
           <div className="flex items-center gap-2.5">
@@ -347,6 +354,7 @@ export const ThemeModal: React.FC<ThemeModalProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

@@ -80,7 +80,12 @@ apiRouter.post('/api/load', async (req: Request, res: Response) => {
     const status = await llamaEngine.start(target, config);
     res.json({ success: true, status });
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Failed to start engine' });
+    const errorMsg = err.message || 'Failed to start engine';
+    const recentLogs = llamaEngine.getRecentLogs(30);
+    res.status(500).json({
+      error: errorMsg,
+      details: recentLogs || errorMsg,
+    });
   }
 });
 
