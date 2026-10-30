@@ -63,6 +63,29 @@ if (fs.existsSync(webDistPath)) {
   console.log('[Server] Note: Web frontend not built yet. Run "npm run build:web" or use Vite dev server.');
 }
 
+// Guarantee clean JSON error responses for any unhandled /api or /v1 requests (never HTML <!DOCTYPE>)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
+    return res.status(404).json({
+      error: `Endpoint '${req.method} ${req.path}' not found on LM Studio Android`,
+      code: 404,
+    });
+  }
+  next();
+});
+
+// Global error handler guaranteeing JSON
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/v1')) {
+    const statusCode = err.status || err.statusCode || 500;
+    return res.status(statusCode).json({
+      error: err.message || 'Internal Server Error',
+      code: statusCode,
+    });
+  }
+  next(err);
+});
+
 // Setup WebSocket Server for Live Telemetry
 const wss = new WebSocketServer({ server, path: '/ws' });
 const connectedClients = new Set<WebSocket>();

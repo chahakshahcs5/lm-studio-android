@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { hardwareMonitor } from '../hardware/telemetry.js';
 import { llamaEngine } from '../engine/llama.js';
+import { LocalModel } from '@lm-studio-android/shared';
 import { modelManager, CURATED_MODELS } from '../hf/models.js';
 import { searchHfHub, getHfModelFiles, getHfModelDetails } from '../hf/hub.js';
 import { getLocalIp } from '../utils/network.js';
@@ -371,16 +372,7 @@ apiRouter.post(['/v1/chat/completions', '/v1/completions'], async (req: Request,
   // If engine is not running, attempt on-demand auto-mount of the requested model or first local model
   if (!status.loaded) {
     const localModels = modelManager.scanLocalModels();
-    const requestedModelName = req.body?.model;
-    const targetModel =
-      (requestedModelName &&
-        localModels.find(
-          (m) =>
-            m.name === requestedModelName ||
-            m.id === requestedModelName ||
-            m.path.includes(requestedModelName)
-        )) ||
-      localModels[0];
+    const targetModel = findMatchingModel(req.body?.model, localModels);
 
     if (targetModel) {
       console.log(`[API] Auto-mounting model '${targetModel.name}' on-demand for incoming OpenAI API request...`);
@@ -622,6 +614,453 @@ Everything is operating with sub-second Time-To-First-Token! How else can I assi
 
   proxyReq.write(JSON.stringify(req.body));
   proxyReq.end();
+});
+
+// ============================================================================
+// Ollama Compatible API Suite (/api/chat, /api/generate, /api/tags, /api/version, /api/show)
+// ============================================================================
+
+/**
+ * Dynamically extract model metadata (family, parameter size, quantization, template, stop tokens)
+ * from model name, filename, and size without hardcoding any specific model family.
+ */
+function extractModelMetadata(modelNameOrPath: string, sizeBytes?: number) {
+  const cleanName = path.basename(modelNameOrPath).replace(/\.gguf$/i, '');
+  const lower = cleanName.toLowerCase();
+
+  // 1. Detect architecture / family dynamically
+  let family = 'llama';
+  if (lower.includes('qwen')) {
+    family = 'qwen2';
+  } else if (lower.includes('deepseek')) {
+    family = 'deepseek';
+  } else if (lower.includes('gemma')) {
+    family = 'gemma2';
+  } else if (lower.includes('mistral') || lower.includes('mixtral')) {
+    family = 'mistral';
+  } else if (lower.includes('phi')) {
+    family = 'phi3';
+  } else if (lower.includes('starcoder')) {
+    family = 'starcoder2';
+  } else if (lower.includes('smollm')) {
+    family = 'smollm';
+  } else if (lower.includes('command-r') || lower.includes('command_r')) {
+    family = 'command-r';
+  } else if (lower.includes('falcon')) {
+    family = 'falcon';
+  } else if (lower.includes('internlm')) {
+    family = 'internlm2';
+  } else if (lower.includes('yi')) {
+    family = 'yi';
+  } else if (lower.includes('baichuan')) {
+    family = 'baichuan';
+  } else if (lower.includes('bert') || lower.includes('nomic') || lower.includes('minilm')) {
+    family = 'bert';
+  }
+
+  // 2. Detect parameter size (e.g. 0.5B, 1.5B, 1B, 2B, 3B, 4B, 7B, 8B, 9B, 14B, 27B, 32B, 70B, 360M, 135M)
+  let parameterSize = 'Unknown';
+  const paramMatch = lower.match(/(?:^|[^a-z0-9])(\d+(?:\.\d+)?)\s*([bm])(?:[^a-z0-9]|$)/i);
+  if (paramMatch) {
+    parameterSize = `${paramMatch[1]}${paramMatch[2].toUpperCase()}`;
+  } else if (lower.includes('mini')) {
+    parameterSize = '3.8B';
+  } else if (sizeBytes && sizeBytes > 0) {
+    const sizeGb = sizeBytes / (1024 * 1024 * 1024);
+    if (sizeGb < 0.6) {
+      parameterSize = '<1B';
+    } else if (sizeGb < 1.4) {
+      parameterSize = '1B';
+    } else if (sizeGb < 2.5) {
+      parameterSize = '2B-3B';
+    } else if (sizeGb < 5.0) {
+      parameterSize = '7B-8B';
+    } else if (sizeGb < 9.0) {
+      parameterSize = '14B';
+    } else {
+      parameterSize = `${Math.round(sizeGb * 1.5)}B`;
+    }
+  }
+
+  // 3. Detect quantization level (e.g., Q4_K_M, Q5_K_S, Q8_0, IQ4_XS, F16, BF16)
+  let quantizationLevel = 'Q4_K_M';
+  const quantMatch = cleanName.match(/(Q[0-9]+_[A-Z0-9_]+|IQ[0-9]+_[A-Z0-9_]+|F16|F32|BF16)/i);
+  if (quantMatch) {
+    quantizationLevel = quantMatch[1].toUpperCase();
+  }
+
+  // 4. Construct appropriate template & stop tokens based on detected family
+  let template = '{{ if .System }}{{ .System }}\n{{ end }}{{ .Prompt }}\n';
+  let stopTokens = ['<|end|>'];
+
+  switch (family) {
+    case 'qwen2':
+      template = '{{ if .System }}<|im_start|>system\n{{ .System }}<|im_end|>\n{{ end }}<|im_start|>user\n{{ .Prompt }}<|im_end|>\n<|im_start|>assistant\n';
+      stopTokens = ['<|im_end|>', '<|endoftext|>'];
+      break;
+    case 'llama':
+      template = '{{ if .System }}<|start_header_id|>system<|end_header_id|>\n\n{{ .System }}<|eot_id|>{{ end }}<|start_header_id|>user<|end_header_id|>\n\n{{ .Prompt }}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n';
+      stopTokens = ['<|eot_id|>', '<|end_of_text|>'];
+      break;
+    case 'gemma2':
+      template = '{{ if .System }}<start_of_turn>system\n{{ .System }}<end_of_turn>\n{{ end }}<start_of_turn>user\n{{ .Prompt }}<end_of_turn>\n<start_of_turn>model\n';
+      stopTokens = ['<end_of_turn>', '<eos>'];
+      break;
+    case 'mistral':
+      template = '{{ if .System }}[INST] {{ .System }}\n\n{{ .Prompt }} [/INST]{{ else }}[INST] {{ .Prompt }} [/INST]{{ end }}';
+      stopTokens = ['</s>', '[/INST]'];
+      break;
+    case 'phi3':
+      template = '{{ if .System }}<|system|>\n{{ .System }}<|end|>\n{{ end }}<|user|>\n{{ .Prompt }}<|end|>\n<|assistant|>\n';
+      stopTokens = ['<|end|>', '<|endoftext|>'];
+      break;
+    case 'deepseek':
+      template = '{{ if .System }}<|System|>{{ .System }}<|User|>{{ .Prompt }}<|Assistant|>{{ else }}<|User|>{{ .Prompt }}<|Assistant|>{{ end }}';
+      stopTokens = ['<｜end of sentence｜>', '<|EOT|>'];
+      break;
+    default:
+      template = '{{ if .System }}{{ .System }}\n{{ end }}{{ .Prompt }}\n';
+      stopTokens = ['<|end|>'];
+      break;
+  }
+
+  return {
+    family,
+    parameterSize,
+    quantizationLevel,
+    template,
+    stopTokens,
+  };
+}
+
+/**
+ * Dynamically find the matching model among local scanned models
+ */
+function findMatchingModel(query: string | undefined, localModels: LocalModel[]): LocalModel | undefined {
+  if (!query) return localModels[0];
+  const clean = query.replace(/:latest$/, '').toLowerCase().trim();
+  // 1. Exact match by name or id
+  const exact = localModels.find(
+    (m) => m.name.toLowerCase() === clean || m.id.toLowerCase() === clean
+  );
+  if (exact) return exact;
+
+  // 2. Exact match by basename without .gguf
+  const exactBase = localModels.find(
+    (m) => path.basename(m.path).toLowerCase().replace(/\.gguf$/i, '') === clean
+  );
+  if (exactBase) return exactBase;
+
+  // 3. Substring match
+  const substring = localModels.find(
+    (m) =>
+      m.name.toLowerCase().includes(clean) ||
+      m.id.toLowerCase().includes(clean) ||
+      m.path.toLowerCase().includes(clean)
+  );
+  if (substring) return substring;
+
+  // 4. Default fallback to first model
+  return localModels[0];
+}
+
+// Ollama Version
+apiRouter.get(['/api/version', '/api/version/'], (req: Request, res: Response) => {
+  res.json({ version: '0.5.4' });
+});
+
+// Ollama Model Listing (/api/tags)
+apiRouter.get(['/api/tags', '/api/tags/'], (req: Request, res: Response) => {
+  const status = llamaEngine.getStatus();
+  const localModels = modelManager.scanLocalModels();
+
+  const models: any[] = [];
+  for (const m of localModels) {
+    const sizeBytes = m.sizeBytes || 1024 * 1024 * 1024;
+    const meta = extractModelMetadata(m.name || m.path, sizeBytes);
+    const modelObj = {
+      name: `${m.name}:latest`,
+      model: `${m.name}:latest`,
+      modified_at: new Date(m.lastModified || Date.now()).toISOString(),
+      size: sizeBytes,
+      digest: `sha256:${Buffer.from(m.name).toString('hex').padEnd(64, '0').slice(0, 64)}`,
+      details: {
+        parent_model: '',
+        format: 'gguf',
+        family: meta.family,
+        families: [meta.family],
+        parameter_size: meta.parameterSize,
+        quantization_level: meta.quantizationLevel,
+      },
+    };
+    models.push(modelObj);
+    models.push({
+      ...modelObj,
+      name: m.name,
+      model: m.name,
+    });
+  }
+
+  if (models.length === 0) {
+    const meta = extractModelMetadata('default', 1024 * 1024 * 1024);
+    models.push({
+      name: 'default:latest',
+      model: 'default:latest',
+      modified_at: new Date().toISOString(),
+      size: 1024 * 1024 * 1024,
+      digest: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      details: {
+        format: 'gguf',
+        family: meta.family,
+        parameter_size: meta.parameterSize,
+        quantization_level: meta.quantizationLevel,
+      },
+    });
+  }
+
+  res.json({ models });
+});
+
+// Ollama Model Info (/api/show)
+apiRouter.post(['/api/show', '/api/show/'], (req: Request, res: Response) => {
+  const modelName = (req.body?.model || req.body?.name || 'default').replace(/:latest$/, '');
+  const localModels = modelManager.scanLocalModels();
+  const matched = findMatchingModel(modelName, localModels);
+
+  const meta = extractModelMetadata(matched?.name || modelName, matched?.sizeBytes);
+  const stopParam = meta.stopTokens.map((t) => `stop "${t}"`).join('\n');
+
+  res.json({
+    modelfile: `# Modelfile for ${modelName}\nFROM ${modelName}\nTEMPLATE """${meta.template}"""\n${stopParam}`,
+    parameters: stopParam,
+    template: meta.template,
+    details: {
+      parent_model: '',
+      format: 'gguf',
+      family: meta.family,
+      families: [meta.family],
+      parameter_size: meta.parameterSize,
+      quantization_level: meta.quantizationLevel,
+    },
+  });
+});
+
+// Ollama Chat Completions (/api/chat)
+apiRouter.post(['/api/chat', '/api/chat/'], async (req: Request, res: Response) => {
+  let status = llamaEngine.getStatus();
+
+  // On-demand auto-mounting if no model loaded
+  if (!status.loaded) {
+    const localModels = modelManager.scanLocalModels();
+    const targetModel = findMatchingModel(req.body?.model, localModels);
+
+    if (targetModel) {
+      console.log(`[Ollama API] Auto-mounting model '${targetModel.name}' on-demand for /api/chat...`);
+      try {
+        const cpuTopo = hardwareMonitor.detectCpuTopology();
+        const threads = cpuTopo.recommendedThreads || 4;
+        status = await llamaEngine.start(targetModel, {
+          threads,
+          ctxSize: 2048,
+          flashAttn: true,
+          kvQuant: 'f16',
+          gpuLayers: 0,
+          pinCores: true,
+        });
+      } catch (loadErr: any) {
+        return res.status(500).json({ error: `Auto-mount failed: ${loadErr.message}` });
+      }
+    } else {
+      return res.status(400).json({ error: 'No GGUF models found on device storage' });
+    }
+  }
+
+  const activeModelName = status.currentModel?.name || req.body?.model || 'local-model';
+  const isStream = req.body.stream !== false; // Ollama default is stream: true
+
+  // Handle Mock Mode
+  if (llamaEngine.getIsMock()) {
+    const prompt = req.body.messages?.[req.body.messages.length - 1]?.content || 'Hello!';
+    const simulatedResponse = `⚡ **LM Studio Android Engine (Ollama)**\n\nPrompt: "${prompt}"\n\nGenerated efficiently on mobile ARM hardware!`;
+    const words = simulatedResponse.split(' ');
+
+    if (isStream) {
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      let wordIdx = 0;
+      const interval = setInterval(() => {
+        if (wordIdx >= words.length) {
+          clearInterval(interval);
+          res.write(
+            JSON.stringify({
+              model: activeModelName,
+              created_at: new Date().toISOString(),
+              message: { role: 'assistant', content: '' },
+              done: true,
+              total_duration: 1200000000,
+              load_duration: 100000000,
+              prompt_eval_count: Math.round(prompt.length / 4) + 10,
+              prompt_eval_duration: 350000000,
+              eval_count: words.length,
+              eval_duration: 750000000,
+            }) + '\n'
+          );
+          res.end();
+          return;
+        }
+        const chunkText = (wordIdx === 0 ? '' : ' ') + words[wordIdx];
+        llamaEngine.incrementTokens(1);
+        wordIdx++;
+        res.write(
+          JSON.stringify({
+            model: activeModelName,
+            created_at: new Date().toISOString(),
+            message: { role: 'assistant', content: chunkText },
+            done: false,
+          }) + '\n'
+        );
+      }, 35);
+      req.on('close', () => clearInterval(interval));
+      return;
+    } else {
+      return res.json({
+        model: activeModelName,
+        created_at: new Date().toISOString(),
+        message: { role: 'assistant', content: simulatedResponse },
+        done: true,
+        total_duration: 1200000000,
+        prompt_eval_count: Math.round(prompt.length / 4) + 10,
+        eval_count: words.length,
+      });
+    }
+  }
+
+  // Real llama-server proxy via /v1/chat/completions translation
+  const openAiPayload = {
+    model: activeModelName,
+    messages: req.body.messages || [],
+    temperature: req.body.options?.temperature ?? 0.7,
+    top_p: req.body.options?.top_p ?? 0.9,
+    top_k: req.body.options?.top_k,
+    max_tokens: req.body.options?.num_predict,
+    stream: isStream,
+    stream_options: { include_usage: true },
+  };
+
+  const targetUrl = new URL(llamaEngine.getLlamaUrl() + '/v1/chat/completions');
+  const proxyReq = http.request(
+    targetUrl,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    },
+    (proxyRes) => {
+      if (proxyRes.statusCode && proxyRes.statusCode >= 400) {
+        res.status(proxyRes.statusCode);
+        proxyRes.pipe(res);
+        return;
+      }
+
+      if (isStream) {
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        res.setHeader('Transfer-Encoding', 'chunked');
+
+        let streamBuffer = '';
+        let promptTokens = 0;
+        let completionTokens = 0;
+        const startTime = Date.now();
+
+        proxyRes.on('data', (chunk: Buffer) => {
+          streamBuffer += chunk.toString('utf8');
+          const lines = streamBuffer.split('\n');
+          streamBuffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            if (trimmed === 'data: [DONE]') {
+              const totalDurationNs = (Date.now() - startTime) * 1000000;
+              res.write(
+                JSON.stringify({
+                  model: activeModelName,
+                  created_at: new Date().toISOString(),
+                  message: { role: 'assistant', content: '' },
+                  done: true,
+                  total_duration: totalDurationNs,
+                  prompt_eval_count: promptTokens,
+                  eval_count: completionTokens,
+                }) + '\n'
+              );
+              res.end();
+              return;
+            }
+
+            try {
+              const parsed = JSON.parse(trimmed.slice(6));
+              if (parsed.usage) {
+                if (parsed.usage.prompt_tokens) promptTokens = parsed.usage.prompt_tokens;
+                if (parsed.usage.completion_tokens) completionTokens = parsed.usage.completion_tokens;
+              }
+              const deltaContent = parsed.choices?.[0]?.delta?.content;
+              if (deltaContent) {
+                completionTokens++;
+                llamaEngine.incrementTokens(1);
+                res.write(
+                  JSON.stringify({
+                    model: activeModelName,
+                    created_at: new Date().toISOString(),
+                    message: { role: 'assistant', content: deltaContent },
+                    done: false,
+                  }) + '\n'
+                );
+              }
+            } catch {}
+          }
+        });
+
+        proxyRes.on('end', () => {
+          res.end();
+        });
+      } else {
+        let fullBody = '';
+        proxyRes.on('data', (chunk: Buffer) => {
+          fullBody += chunk.toString('utf8');
+        });
+        proxyRes.on('end', () => {
+          try {
+            const parsed = JSON.parse(fullBody);
+            const content = parsed.choices?.[0]?.message?.content || '';
+            res.json({
+              model: activeModelName,
+              created_at: new Date().toISOString(),
+              message: { role: 'assistant', content },
+              done: true,
+              total_duration: 1000000000,
+              prompt_eval_count: parsed.usage?.prompt_tokens,
+              eval_count: parsed.usage?.completion_tokens,
+            });
+          } catch {
+            res.status(500).json({ error: 'Failed to parse engine completion' });
+          }
+        });
+      }
+    }
+  );
+
+  proxyReq.on('error', (err) => {
+    res.status(502).json({ error: `Engine proxy error: ${err.message}` });
+  });
+
+  proxyReq.write(JSON.stringify(openAiPayload));
+  proxyReq.end();
+});
+
+// Ollama Raw Prompt Generate (/api/generate)
+apiRouter.post(['/api/generate', '/api/generate/'], async (req: Request, res: Response) => {
+  const prompt = req.body?.prompt || '';
+  req.body.messages = [{ role: 'user', content: prompt }];
+  // Forward to /api/chat
+  return (apiRouter as any).handle(req, res);
 });
 
 // Proxy tokenize & server properties
