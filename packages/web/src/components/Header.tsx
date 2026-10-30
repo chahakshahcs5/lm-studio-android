@@ -1,5 +1,20 @@
-import React from 'react';
-import { Cpu, HardDrive, Battery, Zap, Terminal, Database, Sparkles, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Cpu,
+  HardDrive,
+  Battery,
+  Zap,
+  Terminal,
+  Database,
+  Sparkles,
+  RefreshCw,
+  Sun,
+  Moon,
+  Wifi,
+  Copy,
+  Check,
+  Palette,
+} from 'lucide-react';
 import { EngineStatus, HardwareTelemetry } from '@lm-studio-android/shared';
 
 interface HeaderProps {
@@ -10,6 +25,10 @@ interface HeaderProps {
   isConnected: boolean;
   onUnloadModel: () => Promise<void>;
   isLoading: boolean;
+  mode: 'dark' | 'light';
+  onToggleMode: () => void;
+  onOpenThemeModal: () => void;
+  serverIp?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,7 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
   isConnected,
   onUnloadModel,
   isLoading,
+  mode,
+  onToggleMode,
+  onOpenThemeModal,
+  serverIp,
 }) => {
+  const [copiedIp, setCopiedIp] = useState(false);
+
   const isLoaded = engineStatus?.loaded;
   const currentModel = engineStatus?.currentModel;
   const battery = telemetry?.battery;
@@ -30,55 +55,78 @@ export const Header: React.FC<HeaderProps> = ({
   const temp = battery?.temperature;
   const tempColor =
     temp === null || temp === undefined
-      ? 'text-slate-400'
+      ? 'text-studio-textMuted'
       : temp >= 44
       ? 'text-crimson-accent font-bold animate-pulse'
       : temp >= 38
       ? 'text-amber-accent'
-      : 'text-emerald-accent';
+      : 'text-accent';
+
+  // Wi-Fi LAN URL
+  const ip =
+    serverIp || (window.location.hostname !== 'localhost' ? window.location.hostname : '192.168.1.16');
+  const lanUrl = `http://${ip}:8080`;
+
+  const handleCopyLanUrl = () => {
+    navigator.clipboard.writeText(lanUrl);
+    setCopiedIp(true);
+    setTimeout(() => setCopiedIp(false), 2000);
+  };
 
   return (
-    <header className="h-16 bg-studio-surface border-b border-studio-border px-5 flex items-center justify-between flex-shrink-0 z-30 select-none">
+    <header className="h-16 bg-studio-surface border-b border-studio-border px-4 md:px-6 flex items-center justify-between flex-shrink-0 z-30 select-none transition-colors">
       {/* Brand & Connection */}
-      <div className="flex items-center gap-5">
+      <div className="flex items-center gap-4 lg:gap-6">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-accent to-emerald-600 flex items-center justify-center text-slate-950 shadow-glow-emerald">
-            <Zap className="w-5 h-5 fill-slate-950 stroke-slate-950" />
+          <div className="w-8 h-8 rounded-lg bg-accent text-white flex items-center justify-center shadow-accent-glow transition-all">
+            <Zap className="w-4 h-4 fill-white stroke-white" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="font-mono text-sm font-bold tracking-tight text-slate-100">LM STUDIO</span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-muted text-emerald-accent border border-emerald-accent/30">
+              <span className="font-mono text-sm font-bold tracking-tight text-studio-text">
+                LM STUDIO
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-accent-muted text-accent border border-accent/20">
                 ANDROID
               </span>
             </div>
-            <p className="text-[11px] text-slate-400 tracking-wide font-medium">Edge AI Coprocessor</p>
+            <p className="text-[11px] text-studio-textMuted tracking-wide font-medium">
+              Smartphone AI Accelerator
+            </p>
           </div>
         </div>
 
-        {/* Connection status pill */}
-        <div className="hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full bg-studio-card border border-studio-border text-xs font-mono">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              isConnected ? 'bg-emerald-accent shadow-[0_0_8px_#00f5a0]' : 'bg-crimson-accent'
-            }`}
-          />
-          <span className="text-slate-300">{isConnected ? 'Bridge Active' : 'Connecting...'}</span>
-        </div>
+        {/* Local Wi-Fi LAN Pill */}
+        <button
+          onClick={handleCopyLanUrl}
+          className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-studio-card border border-studio-border text-xs font-mono hover:border-accent transition-all group"
+          title="Click to copy Local Wi-Fi LAN URL"
+        >
+          <Wifi className="w-3.5 h-3.5 text-accent" />
+          <span className="text-studio-textMuted font-sans">LAN:</span>
+          <span className="font-semibold text-studio-text group-hover:text-accent transition-colors">
+            {lanUrl}
+          </span>
+          {copiedIp ? (
+            <Check className="w-3 h-3 text-accent" />
+          ) : (
+            <Copy className="w-3 h-3 text-studio-textMuted opacity-0 group-hover:opacity-100 transition-opacity" />
+          )}
+        </button>
       </div>
 
       {/* Model State Pill in Center */}
       <div className="hidden lg:flex items-center gap-3">
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-studio-card border border-studio-border">
-          <Database className="w-4 h-4 text-emerald-accent" />
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg bg-studio-card border border-studio-border shadow-studio-subtle">
+          <Database className="w-4 h-4 text-accent" />
           <div className="text-xs">
-            <span className="text-slate-400 mr-1.5">Mounted:</span>
+            <span className="text-studio-textMuted mr-1.5">Mounted:</span>
             {isLoaded ? (
-              <span className="font-mono font-semibold text-emerald-accent">
+              <span className="font-mono font-semibold text-accent">
                 {currentModel?.name}
               </span>
             ) : (
-              <span className="font-mono text-slate-500 italic">No model loaded</span>
+              <span className="font-mono text-studio-textMuted italic">Standby (No model loaded)</span>
             )}
           </div>
         </div>
@@ -96,44 +144,16 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Navigation & Telemetry Quick Glance */}
-      <div className="flex items-center gap-4">
-        {/* Hardware Quick Glance Bar */}
-        {telemetry && (
-          <div className="hidden xl:flex items-center gap-3 px-3 py-1.5 rounded-lg bg-studio-card/80 border border-studio-border text-xs font-mono">
-            {/* Battery & Temp */}
-            <div className="flex items-center gap-1.5" title="Phone Battery & Temperature">
-              <Battery className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-200">{battery?.level ?? '--'}%</span>
-              <span className={`text-[11px] ${tempColor}`}>{temp !== null ? `${temp}°C` : ''}</span>
-            </div>
-
-            <div className="w-px h-3.5 bg-studio-border" />
-
-            {/* RAM */}
-            <div className="flex items-center gap-1.5" title="RAM Utilization">
-              <HardDrive className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-200">{ram?.percentUsed ?? '--'}%</span>
-            </div>
-
-            <div className="w-px h-3.5 bg-studio-border" />
-
-            {/* Cores */}
-            <div className="flex items-center gap-1.5" title="Detected CPU Cores">
-              <Cpu className="w-3.5 h-3.5 text-slate-400" />
-              <span className="text-slate-300">{telemetry.cpu.totalCores}C</span>
-            </div>
-          </div>
-        )}
-
+      {/* Right Controls: Tabs + Theme Switcher */}
+      <div className="flex items-center gap-3">
         {/* Navigation Tabs */}
         <nav className="flex items-center p-1 rounded-lg bg-studio-card border border-studio-border">
           <button
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
               activeTab === 'chat'
-                ? 'bg-studio-surface text-emerald-accent shadow-sm border border-emerald-accent/20'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-studio-surface text-accent shadow-sm border border-accent/20'
+                : 'text-studio-textMuted hover:text-studio-text'
             }`}
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -144,8 +164,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('models')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
               activeTab === 'models'
-                ? 'bg-studio-surface text-emerald-accent shadow-sm border border-emerald-accent/20'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-studio-surface text-accent shadow-sm border border-accent/20'
+                : 'text-studio-textMuted hover:text-studio-text'
             }`}
           >
             <Database className="w-3.5 h-3.5" />
@@ -156,14 +176,37 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setActiveTab('api')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
               activeTab === 'api'
-                ? 'bg-studio-surface text-emerald-accent shadow-sm border border-emerald-accent/20'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-studio-surface text-accent shadow-sm border border-accent/20'
+                : 'text-studio-textMuted hover:text-studio-text'
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            <span>API Docs</span>
+            <span>API</span>
           </button>
         </nav>
+
+        {/* Theme Studio & Custom Color Switcher Button */}
+        <button
+          onClick={onOpenThemeModal}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-studio-card border border-studio-border text-studio-textMuted hover:text-studio-text hover:border-accent transition-all group"
+          title="Customize Theme & Palette (Primary/Secondary Colors)"
+        >
+          <Palette className="w-4 h-4 text-accent transition-transform group-hover:rotate-12" />
+          <span className="text-xs font-medium hidden md:inline">Theme</span>
+        </button>
+
+        {/* Quick Light / Dark Mode Toggle */}
+        <button
+          onClick={onToggleMode}
+          className="p-2 rounded-lg bg-studio-card border border-studio-border text-studio-textMuted hover:text-studio-text transition-all active:scale-95"
+          title={`Switch to ${mode === 'dark' ? 'Light' : 'Dark'} Mode`}
+        >
+          {mode === 'dark' ? (
+            <Sun className="w-4 h-4 text-amber-500" />
+          ) : (
+            <Moon className="w-4 h-4 text-indigo-500" />
+          )}
+        </button>
       </div>
     </header>
   );

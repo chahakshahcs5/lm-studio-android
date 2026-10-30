@@ -2,25 +2,90 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ==========================================================================
+   THEME DESIGN TOKENS
+   ========================================================================== */
 :root {
-  --bg-primary: #07080b;
-  --bg-surface: #0d0f15;
-  --bg-card: #131620;
-  --bg-card-hover: #1a1e2c;
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-active: rgba(0, 245, 160, 0.4);
+  /* Industrial Light Theme */
+  --bg-base: #f4f6fa;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f3f8;
+  --border: #e2e6ee;
+  --border-subtle: #edf1f7;
+  --text-main: #14171f;
+  --text-muted: #525866;
+  --text-dim: #868c98;
+  --shadow-subtle: 0 4px 18px rgba(0, 0, 0, 0.06);
+
+  /* Default Accent: Crimson */
+  --accent: #e63946;
+  --accent-hover: #c1121f;
+  --accent-muted: rgba(230, 57, 70, 0.12);
+  --accent-glow: rgba(230, 57, 70, 0.3);
+}
+
+.dark {
+  /* Industrial Matte Dark Theme */
+  --bg-base: #0f1117;
+  --bg-surface: #151821;
+  --bg-card: #1c202b;
+  --bg-card-hover: #242938;
+  --border: #282d3d;
+  --border-subtle: #1e2230;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+  --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.45);
+
+  --accent: #e63946;
+  --accent-hover: #ff4d5a;
+  --accent-muted: rgba(230, 57, 70, 0.16);
+  --accent-glow: rgba(230, 57, 70, 0.35);
+}
+
+/* Dynamic Accent Colors */
+[data-accent="crimson"] {
+  --accent: #e63946;
+  --accent-hover: #c1121f;
+  --accent-muted: rgba(230, 57, 70, 0.14);
+  --accent-glow: rgba(230, 57, 70, 0.35);
+}
+[data-accent="indigo"] {
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-muted: rgba(99, 102, 241, 0.14);
+  --accent-glow: rgba(99, 102, 241, 0.35);
+}
+[data-accent="cyan"] {
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-muted: rgba(2, 132, 199, 0.14);
+  --accent-glow: rgba(2, 132, 199, 0.35);
+}
+[data-accent="emerald"] {
+  --accent: #10b981;
+  --accent-hover: #059669;
+  --accent-muted: rgba(16, 185, 129, 0.14);
+  --accent-glow: rgba(16, 185, 129, 0.35);
+}
+[data-accent="amber"] {
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-muted: rgba(245, 158, 11, 0.14);
+  --accent-glow: rgba(245, 158, 11, 0.35);
 }
 
 body {
   margin: 0;
   padding: 0;
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-primary);
-  color: #f1f3f7;
+  background-color: var(--bg-base);
+  color: var(--text-main);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Studio Precision Scrollbar */
+/* Studio Precision Scrollbar */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -29,16 +94,16 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--border);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #00F5A0;
+  background: var(--accent);
 }
 
 /* Markdown & Code Block Typography */
 .prose-studio {
-  color: #e2e8f0;
+  color: var(--text-main);
   line-height: 1.7;
   font-size: 0.95rem;
 }
@@ -49,31 +114,33 @@ body {
 }
 
 .prose-studio pre {
-  background: #06070a;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-base);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
   overflow-x: auto;
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.85rem;
   margin: 0.75rem 0;
+  color: var(--text-main);
 }
 
 .prose-studio code {
   font-family: 'JetBrains Mono', monospace;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--accent-muted);
+  border: 1px solid var(--border-subtle);
   padding: 0.15rem 0.35rem;
   border-radius: 4px;
   font-size: 0.86em;
-  color: #00F5A0;
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .prose-studio pre code {
   background: transparent;
   border: none;
   padding: 0;
-  color: #f1f5f9;
+  color: inherit;
 }
 
 .prose-studio ul, .prose-studio ol {
@@ -85,10 +152,10 @@ body {
 }
 
 .prose-studio blockquote {
-  border-left: 3px solid #00F5A0;
+  border-left: 3px solid var(--accent);
   padding-left: 1rem;
   margin: 0.75rem 0;
-  color: #94a3b8;
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -99,13 +166,13 @@ body {
 }
 
 .prose-studio th, .prose-studio td {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
   padding: 0.5rem 0.75rem;
   text-align: left;
 }
 
 .prose-studio th {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-card-hover);
   font-weight: 600;
 }
 
@@ -114,7 +181,7 @@ body {
   display: inline-block;
   width: 7px;
   height: 15px;
-  background-color: #00F5A0;
+  background-color: var(--accent);
   margin-left: 4px;
   vertical-align: middle;
   animation: cursorBlink 0.8s infinite;

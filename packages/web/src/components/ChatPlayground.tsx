@@ -12,7 +12,6 @@ import {
   Zap,
   BookOpen,
   ArrowRight,
-  Code2,
 } from 'lucide-react';
 import { marked } from 'marked';
 import {
@@ -201,7 +200,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               );
             }
           } catch {
-            // ignore JSON parse partial
+            // ignore partial json
           }
         }
       }
@@ -265,13 +264,13 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
   return (
     <div className="flex-1 flex overflow-hidden relative">
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-full bg-studio-bg overflow-hidden relative">
+      <div className="flex-1 flex flex-col h-full bg-studio-bg overflow-hidden relative transition-colors">
         {/* Top Control Bar */}
-        <div className="h-12 border-b border-studio-border px-5 flex items-center justify-between bg-studio-surface/60 backdrop-blur-sm z-10 flex-shrink-0">
+        <div className="h-12 border-b border-studio-border px-5 flex items-center justify-between bg-studio-surface/80 backdrop-blur-sm z-10 flex-shrink-0">
           {/* Preset Selector */}
           <div className="flex items-center gap-2 text-xs">
-            <BookOpen className="w-3.5 h-3.5 text-slate-400" />
-            <span className="text-slate-400">Persona:</span>
+            <BookOpen className="w-3.5 h-3.5 text-studio-textMuted" />
+            <span className="text-studio-textMuted">Persona:</span>
             <select
               value={selectedPreset}
               onChange={(e) => {
@@ -281,7 +280,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                   setCustomSystemPrompt(p.content);
                 }
               }}
-              className="bg-studio-card border border-studio-border rounded px-2.5 py-1 text-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-accent"
+              className="bg-studio-card border border-studio-border rounded px-2.5 py-1 text-studio-text text-xs font-medium focus:outline-none focus:border-accent"
             >
               {PRESET_SYSTEM_PROMPTS.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -297,8 +296,8 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               onClick={() => setShowParams(!showParams)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs transition-colors border ${
                 showParams
-                  ? 'bg-studio-card text-emerald-accent border-emerald-accent/30'
-                  : 'text-slate-400 hover:text-slate-200 border-transparent hover:border-studio-border'
+                  ? 'bg-studio-card text-accent border-accent/30'
+                  : 'text-studio-textMuted hover:text-studio-text border-transparent hover:border-studio-border'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
@@ -308,7 +307,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
             {messages.length > 0 && (
               <button
                 onClick={handleClear}
-                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs text-slate-400 hover:text-crimson-accent hover:bg-crimson-muted border border-transparent transition-colors"
+                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs text-studio-textMuted hover:text-crimson-accent hover:bg-crimson-muted border border-transparent transition-colors"
                 title="Clear current conversation"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -322,13 +321,13 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
         <div className="flex-1 overflow-y-auto px-4 md:px-8 py-6 space-y-6">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center max-w-2xl mx-auto text-center px-4">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-accent to-cyan-accent flex items-center justify-center text-slate-950 mb-4 shadow-glow-emerald">
-                <Sparkles className="w-6 h-6 fill-slate-950 stroke-slate-950" />
+              <div className="w-12 h-12 rounded-2xl bg-accent text-white flex items-center justify-center mb-4 shadow-accent-glow">
+                <Sparkles className="w-6 h-6 fill-white stroke-white" />
               </div>
-              <h2 className="text-xl md:text-2xl font-bold tracking-tight text-slate-100 font-mono">
+              <h2 className="text-xl md:text-2xl font-bold tracking-tight text-studio-text font-mono">
                 LM Studio Android Edge Engine
               </h2>
-              <p className="text-sm text-slate-400 mt-2 max-w-md">
+              <p className="text-sm text-studio-textMuted mt-2 max-w-md">
                 Inference offloaded to phone ARM cores and mobile GPU. Select a prompt below or start chatting.
               </p>
 
@@ -355,13 +354,13 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                   <button
                     key={idx}
                     onClick={() => handleSend(s.prompt)}
-                    className="p-3.5 rounded-xl bg-studio-surface border border-studio-border hover:border-emerald-accent/50 text-left transition-all duration-150 hover:-translate-y-0.5 group shadow-studio-subtle"
+                    className="p-3.5 rounded-xl bg-studio-card border border-studio-border hover:border-accent text-left transition-all duration-150 hover:-translate-y-0.5 group shadow-studio-subtle"
                   >
-                    <span className="text-xs font-semibold text-slate-200 block group-hover:text-emerald-accent flex items-center justify-between">
+                    <span className="text-xs font-semibold text-studio-text block group-hover:text-accent flex items-center justify-between">
                       {s.title}
                       <ArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </span>
-                    <span className="text-[11px] text-slate-500 line-clamp-2 mt-1">
+                    <span className="text-[11px] text-studio-textMuted line-clamp-2 mt-1">
                       {s.prompt}
                     </span>
                   </button>
@@ -377,7 +376,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                 }`}
               >
                 {msg.role === 'assistant' && (
-                  <div className="w-7 h-7 rounded-lg bg-emerald-muted border border-emerald-accent/30 flex items-center justify-center text-emerald-accent flex-shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-accent-muted border border-accent/30 flex items-center justify-center text-accent flex-shrink-0 mt-0.5">
                     <Bot className="w-4 h-4" />
                   </div>
                 )}
@@ -388,10 +387,10 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                   }`}
                 >
                   <div
-                    className={`p-4 rounded-xl text-sm leading-relaxed ${
+                    className={`p-4 rounded-xl text-sm leading-relaxed shadow-studio-subtle ${
                       msg.role === 'user'
-                        ? 'bg-studio-card border border-studio-border border-l-2 border-l-emerald-accent text-slate-100'
-                        : 'bg-studio-surface border border-studio-border text-slate-200 w-full'
+                        ? 'bg-studio-card border border-studio-border border-l-2 border-l-accent text-studio-text'
+                        : 'bg-studio-surface border border-studio-border text-studio-text w-full'
                     }`}
                   >
                     {msg.role === 'user' ? (
@@ -413,8 +412,8 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
 
                   {/* Assistant Generation Metrics Footer */}
                   {msg.role === 'assistant' && msg.metrics && (
-                    <div className="flex items-center gap-3 mt-1.5 px-2 text-[11px] font-mono text-slate-400">
-                      <span className="flex items-center gap-1 text-emerald-accent font-semibold">
+                    <div className="flex items-center gap-3 mt-1.5 px-2 text-[11px] font-mono text-studio-textMuted">
+                      <span className="flex items-center gap-1 text-accent font-semibold">
                         <Zap className="w-3 h-3" />
                         {msg.metrics.tokensPerSecond} t/s
                       </span>
@@ -431,11 +430,11 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
 
                       <button
                         onClick={() => handleCopy(msg.content, msg.id)}
-                        className="ml-auto flex items-center gap-1 text-slate-500 hover:text-slate-300 transition-colors"
+                        className="ml-auto flex items-center gap-1 text-studio-textMuted hover:text-studio-text transition-colors"
                         title="Copy message text"
                       >
                         {copiedId === msg.id ? (
-                          <Check className="w-3 h-3 text-emerald-accent" />
+                          <Check className="w-3 h-3 text-accent" />
                         ) : (
                           <Copy className="w-3 h-3" />
                         )}
@@ -445,7 +444,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                 </div>
 
                 {msg.role === 'user' && (
-                  <div className="w-7 h-7 rounded-lg bg-studio-card border border-studio-border flex items-center justify-center text-slate-400 flex-shrink-0 mt-0.5">
+                  <div className="w-7 h-7 rounded-lg bg-studio-card border border-studio-border flex items-center justify-center text-studio-textMuted flex-shrink-0 mt-0.5">
                     <User className="w-4 h-4" />
                   </div>
                 )}
@@ -456,9 +455,9 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
         </div>
 
         {/* Input Bar */}
-        <div className="p-4 bg-studio-surface border-t border-studio-border flex-shrink-0">
+        <div className="p-4 bg-studio-surface border-t border-studio-border flex-shrink-0 transition-colors">
           <div className="max-w-4xl mx-auto">
-            <div className="relative rounded-xl bg-studio-card border border-studio-border focus-within:border-emerald-accent focus-within:ring-1 focus-within:ring-emerald-accent transition-all p-2 flex items-end gap-2 shadow-studio-subtle">
+            <div className="relative rounded-xl bg-studio-card border border-studio-border focus-within:border-accent focus-within:ring-1 focus-within:ring-accent transition-all p-2 flex items-end gap-2 shadow-studio-subtle">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -471,7 +470,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                 }
                 disabled={!engineStatus?.loaded}
                 rows={1}
-                className="flex-1 bg-transparent border-0 outline-none resize-none text-sm text-slate-100 placeholder:text-slate-500 px-2 py-1 max-h-32 min-h-[36px]"
+                className="flex-1 bg-transparent border-0 outline-none resize-none text-sm text-studio-text placeholder:text-studio-textMuted px-2 py-1 max-h-32 min-h-[36px]"
               />
 
               {isStreaming ? (
@@ -486,14 +485,14 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
                 <button
                   onClick={() => handleSend()}
                   disabled={!input.trim() || !engineStatus?.loaded}
-                  className="p-2 rounded-lg bg-emerald-accent text-slate-950 hover:bg-emerald-400 transition-all disabled:opacity-30 disabled:hover:bg-emerald-accent disabled:cursor-not-allowed"
+                  className="p-2 rounded-lg bg-accent text-white hover:opacity-90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-accent-glow"
                 >
                   <Send className="w-4 h-4" />
                 </button>
               )}
             </div>
 
-            <div className="flex items-center justify-between mt-2 px-1 text-[11px] text-slate-500 font-mono">
+            <div className="flex items-center justify-between mt-2 px-1 text-[11px] text-studio-textMuted font-mono">
               <span>Press Ctrl + Enter to send</span>
               <span>Offloaded to Smartphone Unified RAM</span>
             </div>
@@ -503,14 +502,14 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
 
       {/* Slide-out Parameters Sidebar */}
       {showParams && (
-        <aside className="w-72 bg-studio-surface border-l border-studio-border p-4 flex flex-col gap-4 overflow-y-auto select-none z-20">
+        <aside className="w-72 bg-studio-surface border-l border-studio-border p-4 flex flex-col gap-4 overflow-y-auto select-none z-20 transition-colors">
           <div className="flex items-center justify-between pb-2 border-b border-studio-border">
-            <span className="font-mono text-xs font-bold text-slate-200 uppercase tracking-wider">
+            <span className="font-mono text-xs font-bold text-studio-text uppercase tracking-wider">
               Inference Parameters
             </span>
             <button
               onClick={() => setShowParams(false)}
-              className="text-slate-500 hover:text-slate-300 text-xs"
+              className="text-studio-textMuted hover:text-studio-text text-xs"
             >
               ✕
             </button>
@@ -519,8 +518,8 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
           {/* Temperature */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300">Temperature</span>
-              <span className="font-mono text-emerald-accent">{params.temperature}</span>
+              <span className="text-studio-text">Temperature</span>
+              <span className="font-mono text-accent">{params.temperature}</span>
             </div>
             <input
               type="range"
@@ -529,9 +528,9 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               step="0.05"
               value={params.temperature}
               onChange={(e) => setParams({ ...params, temperature: parseFloat(e.target.value) })}
-              className="w-full accent-emerald-accent h-1.5 bg-studio-card rounded cursor-pointer"
+              className="w-full accent-accent h-1.5 bg-studio-card rounded cursor-pointer"
             />
-            <span className="text-[10px] text-slate-500 block">
+            <span className="text-[10px] text-studio-textMuted block">
               Controls randomness. Lower is more deterministic.
             </span>
           </div>
@@ -539,8 +538,8 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
           {/* Top-P */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300">Top-P Sampling</span>
-              <span className="font-mono text-emerald-accent">{params.topP}</span>
+              <span className="text-studio-text">Top-P Sampling</span>
+              <span className="font-mono text-accent">{params.topP}</span>
             </div>
             <input
               type="range"
@@ -549,15 +548,15 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               step="0.05"
               value={params.topP}
               onChange={(e) => setParams({ ...params, topP: parseFloat(e.target.value) })}
-              className="w-full accent-emerald-accent h-1.5 bg-studio-card rounded cursor-pointer"
+              className="w-full accent-accent h-1.5 bg-studio-card rounded cursor-pointer"
             />
           </div>
 
           {/* Top-K */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300">Top-K</span>
-              <span className="font-mono text-emerald-accent">{params.topK}</span>
+              <span className="text-studio-text">Top-K</span>
+              <span className="font-mono text-accent">{params.topK}</span>
             </div>
             <input
               type="range"
@@ -566,15 +565,15 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               step="1"
               value={params.topK}
               onChange={(e) => setParams({ ...params, topK: parseInt(e.target.value, 10) })}
-              className="w-full accent-emerald-accent h-1.5 bg-studio-card rounded cursor-pointer"
+              className="w-full accent-accent h-1.5 bg-studio-card rounded cursor-pointer"
             />
           </div>
 
           {/* Repeat Penalty */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300">Repeat Penalty</span>
-              <span className="font-mono text-emerald-accent">{params.repeatPenalty}</span>
+              <span className="text-studio-text">Repeat Penalty</span>
+              <span className="font-mono text-accent">{params.repeatPenalty}</span>
             </div>
             <input
               type="range"
@@ -585,15 +584,15 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               onChange={(e) =>
                 setParams({ ...params, repeatPenalty: parseFloat(e.target.value) })
               }
-              className="w-full accent-emerald-accent h-1.5 bg-studio-card rounded cursor-pointer"
+              className="w-full accent-accent h-1.5 bg-studio-card rounded cursor-pointer"
             />
           </div>
 
           {/* Context Tokens */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300">Max Output Tokens</span>
-              <span className="font-mono text-emerald-accent">{params.maxTokens}</span>
+              <span className="text-studio-text">Max Output Tokens</span>
+              <span className="font-mono text-accent">{params.maxTokens}</span>
             </div>
             <input
               type="range"
@@ -602,7 +601,7 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({ engineStatus, on
               step="128"
               value={params.maxTokens}
               onChange={(e) => setParams({ ...params, maxTokens: parseInt(e.target.value, 10) })}
-              className="w-full accent-emerald-accent h-1.5 bg-studio-card rounded cursor-pointer"
+              className="w-full accent-accent h-1.5 bg-studio-card rounded cursor-pointer"
             />
           </div>
         </aside>

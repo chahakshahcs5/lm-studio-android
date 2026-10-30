@@ -1,16 +1,33 @@
 import React, { useState } from 'react';
 import { useTelemetryWS } from './hooks/useTelemetryWS';
+import { useTheme } from './hooks/useTheme';
 import { Header } from './components/Header';
 import { TelemetryHUD } from './components/TelemetryHUD';
 import { ChatPlayground } from './components/ChatPlayground';
 import { ModelExplorer } from './components/ModelExplorer';
 import { ApiPlayground } from './components/ApiPlayground';
+import { ThemeModal } from './components/ThemeModal';
 
 export function App() {
-  const { telemetry, engineStatus, downloadState, isConnected, refreshStatus } = useTelemetryWS();
+  const { telemetry, engineStatus, downloadState, isConnected, serverIp, refreshStatus } =
+    useTelemetryWS();
+  const {
+    mode,
+    primaryColor,
+    secondaryColor,
+    activePreset,
+    toggleMode,
+    setMode,
+    applyPreset,
+    updatePrimary,
+    updateSecondary,
+    resetToDefault,
+  } = useTheme();
+
   const [activeTab, setActiveTab] = useState<'chat' | 'models' | 'api'>('chat');
   const [currentTps, setCurrentTps] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
 
   const handleUnloadModel = async () => {
     setIsLoading(true);
@@ -27,7 +44,7 @@ export function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-studio-bg text-slate-100 font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-studio-bg text-studio-text font-sans transition-colors">
       {/* Top Header */}
       <Header
         activeTab={activeTab}
@@ -37,6 +54,10 @@ export function App() {
         isConnected={isConnected}
         onUnloadModel={handleUnloadModel}
         isLoading={isLoading}
+        mode={mode}
+        onToggleMode={toggleMode}
+        onOpenThemeModal={() => setIsThemeModalOpen(true)}
+        serverIp={serverIp}
       />
 
       {/* Main Studio Viewport */}
@@ -56,7 +77,9 @@ export function App() {
             />
           )}
 
-          {activeTab === 'api' && <ApiPlayground engineStatus={engineStatus} />}
+          {activeTab === 'api' && (
+            <ApiPlayground engineStatus={engineStatus} serverIp={serverIp} />
+          )}
         </main>
 
         {/* Real-time Hardware Telemetry Rail */}
@@ -66,6 +89,22 @@ export function App() {
           currentTps={currentTps}
         />
       </div>
+
+      {/* Theme Studio & Custom Color Switcher Modal */}
+      <ThemeModal
+        isOpen={isThemeModalOpen}
+        onClose={() => setIsThemeModalOpen(false)}
+        mode={mode}
+        primaryColor={primaryColor}
+        secondaryColor={secondaryColor}
+        activePreset={activePreset}
+        onToggleMode={toggleMode}
+        onSetMode={setMode}
+        onApplyPreset={applyPreset}
+        onUpdatePrimary={updatePrimary}
+        onUpdateSecondary={updateSecondary}
+        onResetToDefault={resetToDefault}
+      />
     </div>
   );
 }

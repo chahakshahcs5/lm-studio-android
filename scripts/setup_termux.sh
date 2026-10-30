@@ -181,16 +181,23 @@ npm run build:server
 echo -e "${BLUE}[3/3] Compiling React Obsidian UI...${NC}"
 npm run build:web
 
-# ==============================================================================
-# 6. DETECT WI-FI IP & LAUNCH SERVER
-# ==============================================================================
-WIFI_IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "127.0.0.1")
+# Robust Wi-Fi LAN IP detection (tries wlan0, ip route, and ifconfig)
+WIFI_IP=$(ip -4 addr show wlan0 2>/dev/null | grep -oE 'inet [0-9.]+' | cut -d' ' -f2 || true)
+if [ -z "$WIFI_IP" ]; then
+    WIFI_IP=$(ip route get 8.8.8.8 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2 || true)
+fi
+if [ -z "$WIFI_IP" ]; then
+    WIFI_IP=$(ifconfig 2>/dev/null | grep -Eo 'inet (addr:)?([0-9]*\.){3}[0-9]*' | grep -Eo '([0-9]*\.){3}[0-9]*' | grep -v '127.0.0.1' | head -n1 || true)
+fi
+if [ -z "$WIFI_IP" ]; then
+    WIFI_IP="127.0.0.1"
+fi
 
 echo -e "\n${CYAN}======================================================================${NC}"
 echo -e "${GREEN}${BOLD}   🚀 LM STUDIO ANDROID IS LIVE AND ACCELERATING!                   ${NC}"
 echo -e "${CYAN}======================================================================${NC}"
 echo -e " 📲 Phone Local Web UI  : ${YELLOW}http://localhost:8080${NC}"
-echo -e " 🌐 PC / Wi-Fi Access   : ${YELLOW}http://${WIFI_IP}:8080${NC}"
+echo -e " 🌐 Local Wi-Fi LAN UI  : ${GREEN}${BOLD}http://${WIFI_IP}:8080${NC}"
 echo -e " 🔌 Universal OpenAI API: ${YELLOW}http://${WIFI_IP}:8080/v1${NC}"
 echo -e " ⚡ USB Zero Latency    : ${CYAN}adb forward tcp:8080 tcp:8080${NC}"
 echo -e "${CYAN}======================================================================${NC}\n"

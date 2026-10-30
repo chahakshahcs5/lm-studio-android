@@ -6,6 +6,7 @@ export function useTelemetryWS() {
   const [engineStatus, setEngineStatus] = useState<EngineStatus | null>(null);
   const [downloadState, setDownloadState] = useState<DownloadState | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [serverIp, setServerIp] = useState<string>('127.0.0.1');
   const wsRef = useRef<WebSocket | null>(null);
 
   const connect = useCallback(() => {
@@ -67,17 +68,23 @@ export function useTelemetryWS() {
         const data = await res.json();
         if (data.engine) setEngineStatus(data.engine);
         if (data.telemetry) setTelemetry(data.telemetry);
+        if (data.ip) setServerIp(data.ip);
       }
     } catch (e) {
       // ignore
     }
   }, []);
 
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
+
   return {
     telemetry,
     engineStatus,
     downloadState,
     isConnected,
+    serverIp,
     refreshStatus,
   };
 }

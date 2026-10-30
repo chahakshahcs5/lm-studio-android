@@ -86,7 +86,31 @@ setInterval(() => {
   }
 }, 1000);
 
-// Graceful cleanup
+import os from 'os';
+
+function getLocalIp(): string {
+  const interfaces = os.networkInterfaces();
+  const candidates: string[] = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        if (
+          name.toLowerCase().includes('wlan') ||
+          name.toLowerCase().includes('wi-fi') ||
+          name.toLowerCase().includes('wifi')
+        ) {
+          return iface.address;
+        }
+        candidates.push(iface.address);
+      }
+    }
+  }
+  const localPrivate = candidates.find(
+    (ip) => ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')
+  );
+  return localPrivate || candidates[0] || '127.0.0.1';
+}
+
 const cleanup = async () => {
   console.log('\n[Server] Shutting down gracefully...');
   await llamaEngine.stop();
@@ -99,12 +123,15 @@ process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('='.repeat(65));
-  console.log('   ⚡ LM STUDIO ANDROID - EDGE AI ACCELERATOR SERVER');
-  console.log('='.repeat(65));
-  console.log(`[*] Local Studio Web UI : http://localhost:${PORT}`);
-  console.log(`[*] OpenAI API Base     : http://localhost:${PORT}/v1`);
-  console.log(`[*] Hardware Telemetry  : ws://localhost:${PORT}/ws`);
+  const localIp = getLocalIp();
+  console.log('='.repeat(70));
+  console.log('   ⚡ LM STUDIO ANDROID - SMARTPHONE AI ACCELERATOR SERVER');
+  console.log('='.repeat(70));
+  console.log(`[*] Phone Local Web UI  : http://localhost:${PORT}`);
+  console.log(`[*] Local Wi-Fi LAN UI  : http://${localIp}:${PORT}`);
+  console.log(`[*] OpenAI API Base     : http://${localIp}:${PORT}/v1`);
+  console.log(`[*] USB ADB Tunneling   : adb forward tcp:${PORT} tcp:${PORT}`);
+  console.log(`[*] Telemetry WebSocket : ws://${localIp}:${PORT}/ws`);
   console.log(`[*] CPU Architecture    : ${hardwareMonitor.detectCpuTopology().socModel}`);
-  console.log('='.repeat(65));
+  console.log('='.repeat(70));
 });
