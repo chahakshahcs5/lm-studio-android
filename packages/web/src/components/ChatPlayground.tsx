@@ -40,6 +40,46 @@ import { copyToClipboard } from '../utils/clipboard';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { PersonaModal } from './PersonaModal';
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+marked.use({
+  renderer: {
+    code({ text, lang }: { text: string; lang?: string }): string {
+      const language = (lang || '').trim();
+      const displayLang = language ? language.split(/\s+/)[0] : 'code';
+      const escapedCode = escapeHtml(text);
+      return `<div class="code-block-container"><div class="code-block-header"><span class="code-lang">${escapeHtml(displayLang)}</span><button type="button" class="copy-code-btn" title="Copy code"><svg class="copy-icon w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg><svg class="check-icon w-3.5 h-3.5 hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span class="copy-label">Copy</span></button></div><pre><code class="language-${escapeHtml(displayLang)}">${escapedCode}</code></pre></div>\n`;
+    },
+  },
+});
+
+const DOMPURIFY_CONFIG = {
+  ADD_TAGS: ['button', 'svg', 'path', 'rect', 'polyline'],
+  ADD_ATTR: [
+    'type',
+    'title',
+    'viewBox',
+    'fill',
+    'stroke',
+    'stroke-width',
+    'stroke-linecap',
+    'stroke-linejoin',
+    'points',
+    'd',
+    'rx',
+    'ry',
+    'width',
+    'height',
+  ],
+};
+
 const DEFAULT_PERSONAS: CustomPersona[] = [
   {
     id: 'general',
@@ -348,6 +388,45 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
       setTimeout(() => setCopiedId(null), 2000);
     }
   };
+
+  const handleMessageContentClick = useCallback(async (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest('.copy-code-btn') as HTMLButtonElement | null;
+    if (!copyBtn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const container = copyBtn.closest('.code-block-container');
+    if (!container) return;
+
+    const codeEl = container.querySelector('pre code');
+    const code = codeEl?.textContent || '';
+    if (!code) return;
+
+    const ok = await copyToClipboard(code);
+    if (ok) {
+      const copyLabel = copyBtn.querySelector('.copy-label');
+      const copyIcon = copyBtn.querySelector('.copy-icon');
+      const checkIcon = copyBtn.querySelector('.check-icon');
+
+      const prevTimer = (copyBtn as any)._copiedTimer;
+      if (prevTimer) clearTimeout(prevTimer);
+
+      copyBtn.classList.add('copied');
+      if (copyLabel) copyLabel.textContent = 'Copied!';
+      if (copyIcon) copyIcon.classList.add('hidden');
+      if (checkIcon) checkIcon.classList.remove('hidden');
+
+      (copyBtn as any)._copiedTimer = setTimeout(() => {
+        copyBtn.classList.remove('copied');
+        if (copyLabel) copyLabel.textContent = 'Copy';
+        if (copyIcon) copyIcon.classList.remove('hidden');
+        if (checkIcon) checkIcon.classList.add('hidden');
+        delete (copyBtn as any)._copiedTimer;
+      }, 2000);
+    }
+  }, []);
 
   const handleSend = async (contentToSend?: string) => {
     const text = (contentToSend || input).trim();
@@ -947,9 +1026,11 @@ export const ChatPlayground: React.FC<ChatPlaygroundProps> = ({
                           <>
                             <div
                               className="prose-studio"
+                              onClick={handleMessageContentClick}
                               dangerouslySetInnerHTML={{
                                 __html: DOMPurify.sanitize(
-                                  marked.parse(msg.content || '', { async: false }) as string
+                                  marked.parse(msg.content || '', { async: false }) as string,
+                                  DOMPURIFY_CONFIG
                                 ),
                               }}
                             />
