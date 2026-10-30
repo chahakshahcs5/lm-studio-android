@@ -17,16 +17,22 @@
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Quick Start (1-Command Setup)
 
-### 1. Launch on Android (via Termux)
-Inside the **Termux** app on your phone:
+### 1. On Your Android Smartphone (Termux)
+Open the **Termux** app on your phone, paste this single command, and press **Enter**:
+
 ```bash
-pkg update -y && pkg install -y git nodejs
-git clone https://github.com/your-username/lm-studio-android.git ~/lm-studio-android
-cd ~/lm-studio-android
-bash scripts/setup_termux.sh
+curl -sL https://raw.githubusercontent.com/chahakshahcs5/lm-studio-android/main/setup_termux.sh | bash
 ```
+*(or via:* `bash -c "$(curl -fsSL https://raw.githubusercontent.com/chahakshahcs5/lm-studio-android/main/setup_termux.sh)"`*)*
+
+> **What this command automatically handles:**
+> 1. Clones the latest `lm-studio-android` repository.
+> 2. Acquires CPU wake-lock (keeps the model running with the screen off).
+> 3. Detects phone ARM hardware, RAM capacity, and big.LITTLE core layout.
+> 4. Installs Node.js & compilers, then builds `llama-server`.
+> 5. Compiles the high-speed Studio Obsidian Web UI and launches the server at `http://localhost:8080`.
 
 ### 2. Connect from PC (Zero Latency USB Bridge)
 Connect your phone with a USB cable (with **USB Debugging** enabled):
